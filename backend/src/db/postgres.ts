@@ -1,5 +1,6 @@
 import { Pool, type PoolClient } from 'pg'
 import dotenv from 'dotenv'
+import { logger } from '../lib/logger.js'
 
 dotenv.config({ path: '.env.local' })
 dotenv.config()
@@ -409,7 +410,19 @@ function toDbRecord(tableInfo: Awaited<ReturnType<typeof getTableInfo>>, documen
   for (const [propertyName, value] of Object.entries(document)) {
     const columnName = toSnakeCase(propertyName)
     const columnInfo = tableInfo.columnMap.get(columnName)
-    if (!columnInfo) continue
+    if (!columnInfo) {
+      // Silently dropping this write is how "ship UI before schema exists" is meant to work,
+      // but a dropped field on a table that's otherwise fully migrated is much more likely to be
+      // a missing migration than an intentional not-yet-built column. Log it loudly so that class
+      // of bug (code writes a field, nobody ever added the column) surfaces immediately instead of
+      // silently discarding data for months. See TASKS.md 2026-08-10 enrollments entry for the
+      // incident this would have caught.
+      logger.warn(
+        { table: tableInfo.tableName, field: propertyName, column: columnName },
+        `[db] dropping write to ${tableInfo.tableName}.${columnName} -- column does not exist (property "${propertyName}" has no matching migration)`,
+      )
+      continue
+    }
 
     const normalized = normalizeDbValue(value, columnInfo)
     if (normalized !== undefined) {
@@ -497,7 +510,10 @@ class PostgresCollection<T extends Record<string, unknown>> implements Collectio
       return rows.map((row) => rowToDocument(row, columnMap)) as T[]
     } catch (error) {
       if (isMissingRelationError(error)) {
-        console.warn(`[db] missing table for collection ${this.collectionName}; returning empty result`)
+        logger.warn(
+          { collection: this.collectionName },
+          `[db] missing table for collection ${this.collectionName}; returning empty result`,
+        )
         return [] as T[]
       }
       throw error

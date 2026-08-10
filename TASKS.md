@@ -4,6 +4,8 @@ Status legend: ✅ Done · 🟡 In Progress / Partial · ⬜ To Do
 
 Source: code inspection + repo docs (`Project Overview.md`, `cover.md`, `missing.md`, `test.md`, `last thing was working on .md`, `users.md`, `tahasql.md`). Where repo gave no explicit signal, component marked ✅ if route+table+UI all exist, 🟡 if only some layers exist, ⬜ if referenced but not built.
 
+> **Known-stale (2026-08-10):** the "DB Schema" section below only tracks the ~35 core tables this doc's authors knew about. Live introspection found **149 tables** — see [`SCHEMA.md`](./SCHEMA.md) for ground truth. A full per-table route/UI audit of the other ~114 tables (HR, library, research, campus life, quizzes/attendance, security/IT, reporting) has not been done yet and is tracked separately; don't treat this doc's completeness claims as covering those subsystems.
+
 ---
 
 ## 1. Infrastructure / Platform
@@ -24,7 +26,7 @@ Source: code inspection + repo docs (`Project Overview.md`, `cover.md`, `missing
 | Backend test setup (Jest + Supertest) | 🟡 | Present, coverage depth unknown |
 | Frontend e2e setup (Playwright) | 🟡 | Present, coverage depth unknown |
 | Deployment config (vercel.json, frontend) | ✅ | Frontend on Vercel; backend deploy target not specified in repo |
-| DB migrations folder | 🟡 | Only 4 tracked migrations (all one date, 2026-05-02); most schema changes done via ad-hoc root .sql files instead of a migration system |
+| DB migrations folder | 🟡 | Real tracked runner exists (`backend/src/db/migrate.ts` + `schema_migrations` table, forward-only), with 6 applied migrations (2026-08-06/07). But a second, orphaned `migrations/` folder at repo root (5 files, 2026-05-02/08-03) predates it and was never applied live — `enrollments.campus`/`is_finalized` columns from it don't exist in the live DB despite this doc previously claiming otherwise. `module_toggles` table exists live but was hand-applied outside the tracked system. Reconciliation in progress. |
 
 ---
 
@@ -36,7 +38,7 @@ Source: code inspection + repo docs (`Project Overview.md`, `cover.md`, `missing
 | students | ✅ | Extended with many personal-info columns via add_missing_student_columns.sql |
 | professors | ✅ | |
 | courses | ✅ | Extended with campus, creditHours, courseType, prerequisiteCourseIds |
-| enrollments | ✅ | Extended with campus column via migration |
+| enrollments | ✅ | **Fixed 2026-08-10.** Live DB was missing 9 columns (`campus`, `is_finalized`, `grade_updated_at`, `grades_finalized_at`, `grades_finalized_by`, `payment_status`, `latest_advisor_message`, `latest_advisor_message_at`, `student`) that `insertEnrollmentRow()` in `enrollments.ts` always wrote to — this made **every enrollment-creation request fail** (`POST /enrollments/self` and `POST /enrollments/`), and silently dropped advisor-message updates. Root cause: orphaned root `migrations/` folder never applied + 4 columns with no migration ever written for them anywhere. Fixed via `backend/migrations/0007-0009`, applied and verified live. |
 | payments | ✅ | |
 | coupons | ✅ | |
 | income / expenses | ✅ | |

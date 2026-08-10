@@ -2,6 +2,8 @@
 
 System: university admin + student portal (University of New York Tirana). Monorepo, no build orchestrator (npm + concurrently). Dev model: not classic waterfall — evolved **incrementally/agile**, feature-by-feature, roles grew 6→20 over time, schema patched live via ad-hoc SQL + resilience-to-missing-tables pattern. See "Dev Model" section at bottom.
 
+> **Schema drift notice (2026-08-10):** this doc's ERD and table counts below are illustrative/core-only and are stale — they undercount the live database badly (~35 tables claimed vs **149 actual**, per live introspection). See [`SCHEMA.md`](./SCHEMA.md) for the full, generated, ground-truth table reference (columns, PKs, FKs, row estimates) covering HR/payroll, library, research, campus life, quizzes/attendance, security/IT, and reporting subsystems this doc never described. Treat `SCHEMA.md` as authoritative for schema; treat this file as authoritative for request flow, auth, and route architecture, which were verified against source and remain accurate.
+
 ---
 
 ## 1. Tech Stack
@@ -48,7 +50,7 @@ flowchart TB
 
     subgraph DB["PostgreSQL (Supabase)"]
         PG["db/postgres.ts\nCollectionLike ORM-lite\ncamelCase<->snake_case mapping\ntolerates missing tables (42P01)"]
-        TABLES[("~35 tables\nusers, students, professors,\ncourses, enrollments, payments,\nfinance*, academic_structure, ...")]
+        TABLES[("149 tables (see SCHEMA.md)\nusers, students, professors,\ncourses, enrollments, payments,\nfinance*, academic_structure, ...")]
     end
 
     PUB --> PAGES

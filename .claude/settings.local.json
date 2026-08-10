@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(xargs grep *)",
+      "Bash(grep -n \"DELETE\\\\|delete\\\\|enrollments/:id\\\\|enrollments/\\\\${\" \"c:/Users/alhar/Downloads/30-4/unyt-main/backend/src/routes/enrollments.ts\")"
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+You are a senior full-stack web developer and UI/UX designer.
+
+Context:
+I already have a complete university management system (admin, supervisor, student dashboards).
+Now I want to CONNECT it to a PUBLIC university website that visitors see BEFORE login.
+
+Goal:
+Create a professional, welcoming, modern PUBLIC university website (pre-login only).
+This website must visually connect to the system but NOT require authentication.
+
+Tech assumptions:
+- Use modern web stack (Next.js + React preferred, or React + Vite)
+- Tailwind CSS for styling
+- Fully responsive (desktop, tablet, mobile)
+- Clean, maintainable component structure
+
+Pages to implement (PUBLIC – before login):
+1. Home / Landing Page
+2. About the University
+3. Faculties & Programs
+4. Admissions Information
+5. Campus Life
+6. Contact Us
+7. Header + Footer (shared layout)
+
+Design & Colors:
+- Use welcoming, academic, professional colors
+- Primary color: Light Blue / Aqua
+- Secondary: White, Soft Gray
+- Accent: Navy or Dark Blue
+- Follow accessibility contrast rules
+
+Design inspiration (apply similar layout & feel):
+- Harvard University website
+- Stanford University website
+- University of Oxford website
+- MIT.edu
+(Do NOT copy content, only design patterns and structure)
+
+UI/UX requirements:
+- Hero section with university name, short slogan, and CTA button ("Apply Now", "Explore Programs")
+- Clean navbar with logo + menu + "Login" button (login button should link to existing system)
+- Cards for faculties/programs
+- Sections with icons and illustrations
+- Subtle animations (hover, transitions)
+- Professional academic typography (e.g. Inter, Poppins, or Source Sans)
+
+Content:
+- Use OPEN-SOURCE / GENERIC placeholder content
+- Do NOT use real copyrighted university text
+- Example university name like: "International University of Technology"
+- Example programs: Computer Science, Engineering, Business, Medicine
+
+Integration requirement:
+- Login button should route to /login (already existing system)
+- Structure code so backend API integration can be added later
+- No authentication logic here
+
+Deliverables:
+- Implement actual code (not just explanation)
+- Create components for each section
+- Clean folder structure
+- Tailwind config with color palette
+- Responsive layout
+- Ready to run project
+
+Output:
+1. Project structure
+2. Key components code
+3. Main pages code
+4. Tailwind color configuration
+5. Brief explanation of design decisions
+
+Important:
+Focus ONLY on pre-login public website.
+Do NOT touch admin, student, or supervisor dashboards.
+Make the website look PROFESSIONAL and TRUSTWORTHY for visitors.

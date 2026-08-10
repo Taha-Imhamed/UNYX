@@ -1,0 +1,3 @@
+.next/ linguist-vendored
+dist/ linguist-vendored
+build/ linguist-vendored

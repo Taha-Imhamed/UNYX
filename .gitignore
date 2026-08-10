@@ -1,0 +1,18 @@
+node_modules
+backend/uploads
+
+# secrets
+.env
+.env.local
+.env.*.local
+*.env.local
+
+# build output
+backend/dist
+frontend/.next
+frontend/out
+
+# logs
+*.log
+*.err
+.run-logs/

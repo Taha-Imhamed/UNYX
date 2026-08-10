@@ -1,0 +1,260 @@
+UNYT System — Architecture Investigation Report
+Root: c:\Users\alhar\Downloads\2-5\unyt system 1-5-2026\unyt-main
+
+1. Tech Stack
+Monorepo layout: root package.json orchestrates backend/ and frontend/ via concurrently (no Turborepo/Nx — just npm scripts: predev runs scripts/bootstrap-dev.mjs, dev/build/start run both sides in parallel).
+
+Backend (backend/package.json, name @ar-company/backend):
+
+Node.js + Express 4 (express)
+Language: TypeScript (ESM, "type": "module"), run via tsx watch src/server.ts in dev, compiled with tsc for prod (dist/backend/src/server.js)
+No ORM — raw pg (node-postgres) driver wrapped in a hand-built MongoDB-like collection abstraction (backend/src/db/postgres.ts) exposing find/findOne/insertOne/updateOne/deleteOne/aggregate over Postgres tables, with automatic camelCase↔snake_case mapping and dynamic column introspection via information_schema.columns
+Database: PostgreSQL (targeted at Supabase — db/postgres.ts reads SUPABASE_DB_URL/DATABASE_URL/POSTGRES_URL env vars, auto-enables SSL for supabase.co hosts)
+Auth: jsonwebtoken (JWT) + bcryptjs for password hashing
+Validation: zod
+Testing: jest + supertest, ts-jest/tsx-based
+CORS: cors package with explicit allow-list + dev bypass
+Frontend (frontend/package.json, name my-v0-project — built with v0.dev):
+
+Next.js 16 (App Router, frontend/app/), React 19
+Styling: Tailwind CSS 4 + tailwindcss-animate/tw-animate-css
+UI kit: Radix UI primitives + shadcn/ui-style components (frontend/components/ui/*), lucide-react icons, cmdk, vaul, sonner (toasts), framer-motion
+Data/forms: @tanstack/react-query, @tanstack/react-table, react-hook-form + @hookform/resolvers + zod
+Charts: recharts
+Routing note: wouter is a dependency (lightweight router), though primary routing is Next.js App Router; wouter may be used for the public marketing pages under frontend/pages/*
+E2E testing: Playwright (@playwright/test, scripts e2e, e2e:ui, e2e:headed, e2e:debug)
+Deployed to Vercel (@vercel/analytics, root vercel.json)
+Shared code: shared/types/index.ts — a single shared TypeScript types file (compiled to .js/.d.ts) imported by both backend (../../../shared/types/index.js) and frontend (@shared/types). This is the canonical domain model / DTO contract.
+
+No Prisma, no Nest, no GraphQL — it's a straightforward Express REST API + Next.js frontend with a custom Postgres data-access layer mimicking MongoDB semantics.
+
+2. Backend Structure
+backend/src/:
+
+
+server.ts              # Express app bootstrap, route mounting, CORS, health check
+db/
+  postgres.ts           # Custom "CollectionLike" ORM-lite over pg Pool (find/insert/update/delete/aggregate)
+middleware/
+  auth.ts               # JWT verify, role→permission matrix, requireAuth/requireAdmin/requirePermission, maintenance-mode gate
+data/
+  collections.ts         # Registry of ~31 getCollection<T>() accessors (one per table/entity)
+  ledger-repository.ts    # Financial ledger read/write helpers
+  student-hints.ts        # Static UI hint content for student portal
+lib/
+  academic-compliance.ts  # Business rules (prereqs, enrollment eligibility, etc.)
+  base-course-assignment.ts # Auto-assignment of base/common courses to majors
+  transcripts.ts           # GPA/transcript computation logic
+routes/                    # 22 route modules, one per domain — see below
+There is no separate controllers/services/models layering — each routes/*.ts file contains route handlers directly (Express Router() instances), calling into data/collections.ts and db/postgres.ts for persistence, and lib/* for shared business logic. This is a "fat routes" pattern rather than MVC.
+
+Route modules and their domains (backend/src/routes/):
+
+File	Domain
+students.ts	Student CRUD, self-service profile, balance, financial snapshot, transactions, payments, schedule preview, grades, transcript (PDF/CSV)
+professors.ts	Professor CRUD
+professor-workspace.ts	Professor's course workspace: mock classes, attendance/availability, publish marks, assignments/materials sections
+enrollments.ts (largest file, ~3700 lines)	Enrollment lifecycle, course catalog meta, academic structure, schedule preview/conflict checks, approvals, grading, advisor workflow
+admin-schedule.ts	Admin-level schedule/room views, room availability, resource updates
+finance.ts	Invoices, installment plans, sponsorships, refunds, payment confirmation, unpaid balances, finance requests, reports
+payments.ts	Payment listing
+income.ts / expenses.ts	Finance ledger CRUD
+coupons.ts	Discount coupon codes
+feedback.ts	Student/general feedback CRUD
+questions.ts	Student→professor Q&A
+news.ts	News/announcements CRUD
+users.ts (largest after enrollments, ~1700 lines)	User CRUD, custom roles, auth login, password change/reset, per-user notifications
+dashboard.ts	Aggregated stats/overview endpoints
+site-content.ts	Public marketing site content (hero, stats, about, admissions)
+student-hints.ts	Static help-content endpoint
+admissions.ts	Scholarship awards, interview schedules, offer letters
+registrar.ts	Enrollment overrides, transfer credits, transcript requests, graduation approvals
+facilities.ts	Maintenance requests, equipment requests, room bookings
+it-admin.ts	SSO config, integrations, system maintenance-mode toggle, device logs
+research-office.ts	Research grants, publications, research requests
+security.ts	Visitor logs, incident reports, ID-card access
+Server mounts routes at server.ts with these base paths: /api/students, /api/enrollments, /api/professors, /api/professor-workspace, /api/expenses, /api/income, /api/feedback, /api/users, /api/dashboard, /api/news, /api/questions, /api/security, /api/facilities, /api/research-office, /api/it-admin, /api/registrar, /api/admissions, /api/admin (schedule), /api/payments, /api/coupons, /api/finance, plus unprefixed site-content and student-hints routers, and /api/health.
+
+Global middleware order: CORS → JSON body parsing → requireAuth (JWT check, with a public-path allowlist) → enforceMaintenanceMode (reads maintenance_state table; admin/super-admin/it-admin exempt) → domain routers.
+
+3. Database Schema
+No Prisma schema exists. The canonical schema source is tahasql.md (root, ~26KB) — a documented SQL script meant for the Supabase SQL editor. Supplementary schema/data lives in loose root-level .sql files and migrations/.
+
+Core tables (from tahasql.md)
+users — id, username, normalized_username, email, role (enum user_role), created_at, last_login, status (enum), avatar_url, password (bcrypt hash), permissions (jsonb), student_id (FK→students), professor_id (FK→professors). Later extended (via users.md seed) with full_name, phone, department, and many more role enum values.
+students — id, display_id, first_name, last_name, email, phone, photo, enrollment_date, program, program_id, faculty, faculty_id, current_semester, status (enum: active/inactive/graduated[/deleted]), address, date_of_birth, balance, supervisor_id, supervisor_name, timestamps. Extended by add_missing_student_columns.sql with: middle_name, major, gender, nationality, national_id, passport_number, blood_type, city, postal_code, emergency_contact_name/phone, mother_name, father_name.
+professors — id, first_name, last_name, email, phone, photo, department, salary, hire_date, specialization, status (active/on-leave/retired), timestamps.
+courses — id, display_id, title, code (unique), professor_id (FK→professors), professor_name, section_id, capacity, start_date, end_date, price, department, branch, location, schedule (jsonb), eligible_programs/faculties/semesters (text[]), enrollment_open + enrollment window fields, timestamps. Later extended with campus, creditHours, courseType ("major"|"common"), prerequisiteCourseIds (per shared/types).
+enrollments — id, display_id, student_id (FK), course_id (FK), course_title, professor_id (FK), professor_name, status (enum enrollment_status: pending, pendingSupervisorApproval, pendingAdvisorApproval, pending_approval, active, waitlisted, completed, cancelled, rejected, dropped), start/end date, price, base_price, coupon_code (FK→coupons), discount_percent/amount, grade fields (midterm/final/project/participation/total, letter_grade, isFinalized), semester, tuition_charged, payment_verified, approval/rejection audit fields (by user id/name/role/at), advisor messaging fields, course_schedule (jsonb), course_code, course_branch, campus (added via migration). Unique constraint: (student_id, course_id, status).
+payments — id, display_id, student_id (FK), amount, method (enum: cash/card/transfer/internal), note, created_at, type (credit/debit), source (payment/enrollment/adjustment), reference_id, enrollment_id (FK), course_id (FK), course_title, balance_after. (Extended in shared types with invoiceId, financeStatus, confirmedAt/By.)
+expenses — id, category, description, amount, date, approved_by, status (pending/approved/rejected).
+income — id, source, description, amount, date, student_id (FK, nullable).
+feedback — id, student_id, student_name, professor_id (FK), professor_name, type (course/facility/professor/general[/admission]), rating (1-5), comment, date, status (new/reviewed/resolved), subject, category, course_id (FK), priority, context, source, target_role (admin/supervisor), attachment/attachment_name.
+news — id, title, body, created_at, created_by, expires_at, image_url.
+notifications — id, user_id, title, body, created_at, read, actor, image_url (no FK by design).
+questions — id, course_id (FK), professor_id (FK), student_id (FK), body, created_at, status (open/answered), reply, replied_at.
+coupons — code (PK), percent, created_at.
+site_content — id, hero/stats/highlights/about/admissions/metrics (jsonb), updated_at — powers the public marketing site.
+Extended/simulation tables (simulation_seed.sql, make_class.sql, seed_courses_departments_enrollments.sql)
+academic_structure (id='global' singleton) — enrollment_open, enrollment_message, departments (jsonb array), campuses (jsonb array), majors (jsonb array with departmentId, years, subjects, courseIds, baseCourseIds).
+campuses / classes (make_class.sql) — relational tables backfilled from academic_structure.campuses jsonb; classes.campus_id FK→campuses.id.
+registration_state (id PK) — is_open, blocked_reason, updated_at/by — global registration on/off switch.
+maintenance_state (id PK) — enabled, message — drives the enforceMaintenanceMode middleware; historically the "original blocker for login and API startup" per missing.md.
+id_card_access — holder_name/type, card_number, issued/expires, status, notes.
+sso_config — provider, client_id, issuer_url, enabled.
+device_logs — device_name, ip_address, event_type, user_id, details.
+transfer_credits — student_id, source_institution, course_title, credit_hours, evaluated_by/at, status.
+transcript_requests — student_id, requested_at, delivery_method, status, notes.
+graduation_approvals — student_id, program, approved_by/at, status, remarks.
+enrollment_overrides — student_id, course_id, reason, approved_by, status.
+scholarship_awards — student_id, scholarship_name, amount, awarded_by/at, status, notes.
+interview_schedules — applicant_name, program, interviewer, scheduled_at, status, notes.
+offer_letters — applicant_name, program, issued_at, status, expiration_date.
+student_profiles_extra (student_id PK) — year_level, advisor_id/name, professor_id/name, scholarship_status, payment_status, registration_hold (bool), tuition_balance, notes.
+migrations/ folder (4 files, all dated 2026-05-02 — the only formally tracked migrations)
+2026-05-02_enrollment_acl.sql
+2026-05-02_enrollment_campus.sql
+2026-05-02_enrollment_campus_backfill.sql
+2026-05-02_enrollment_campus_combined.sql — adds enrollments.campus column + backfills based on course department/title matching, documents a "travel buffer" scheduling policy (10 min same-campus gap, 20 min cross-campus gap) as a table comment.
+Additional finance/admin tables referenced in shared/types/index.ts but not all confirmed present in a single canonical CREATE-TABLE listing
+FinanceInvoice, FinanceInstallmentPlan, FinanceSponsorship, FinanceRefundRequest, FinanceRequest, FinancialLedgerEntry, GradeAuditRecord — these back the finance.ts route handlers (invoices, installment-plans, sponsorships, refunds, requests) and appear to rely on tables created ad hoc/lazily rather than in tahasql.md — worth confirming against backend/src/data/ledger-repository.ts when building the ER diagram.
+
+Entity relationship summary
+users 1—0/1 students, 1—0/1 professors (a login account can be linked to a student or professor profile)
+students 1—N enrollments 1—N... N—1 courses (many-to-many via enrollments)
+courses N—1 professors
+enrollments 1—N payments, N—1 coupons
+students 1—N payments, income, feedback, questions, transfer_credits, transcript_requests, graduation_approvals, scholarship_awards
+courses 1—N questions, feedback (optional)
+academic_structure (singleton) conceptually parents departments, campuses, majors (all jsonb-embedded, partially normalized into relational campuses/classes tables)
+classes N—1 campuses
+The system runs on a backend-tolerant-of-missing-tables design: db/postgres.ts catches Postgres error code 42P01 (undefined table) and returns empty results instead of crashing — this is a deliberate resilience pattern noted in missing.md, meaning many "modules" can be enabled UI-first before their tables exist.
+
+4. Frontend Structure
+Next.js App Router under frontend/app/:
+
+Top-level: layout.tsx, page.tsx (landing/home), globals.css, login/ (login page).
+
+Public marketing pages (older React-Router/wouter-style components, not in app/): frontend/pages/{Home,About,Admissions,Campus,Contact,Faculties,Interest}.tsx — likely rendered client-side within app/page.tsx via wouter, forming the public-facing university website (separate from the authenticated dashboard).
+
+frontend/app/api/ — Next.js route handlers acting as a BFF/proxy layer:
+
+api/[...path]/route.ts — catch-all proxy forwarding /api/* calls to the Express backend (likely injecting auth headers / handling NEXT_PUBLIC_API_URL)
+api/grades-requests/ — dedicated route for grade-change requests
+frontend/app/dashboard/ — the authenticated admin/staff/role portal, 31 sub-route directories, one per role or feature area:
+
+
+admissions, advisor (+ advisor/students), applications, audit, dean, enrollment,
+facilities, feedback, finance, grades-requests, hod, hr, it-admin, librarian,
+news, notifications, professor (+ grade-submission, students-requests), professors,
+registrar, report, requests, research, research-office, security, settings,
+student, student-affairs, students (+ students/[studentId]), super-admin, ta, users
+Plus dashboard/layout.tsx (shared shell/sidebar) and dashboard/page.tsx (default landing — likely role-aware overview per role-workspace-dashboard.tsx).
+
+frontend/app/student/ — dedicated student self-service portal, separate route tree from /dashboard/student:
+
+
+attendance, billing, department-courses, document-request, enroll,
+enrollment-renewal, grades, message, payment-plan, profile, schedule,
+settings, supervisor, support, transcript
+frontend/components/:
+
+Top-level: admin-sidebar.tsx, student-sidebar.tsx, dashboard-header.tsx, dashboard-route-guard.tsx (role-based route protection), data-table.tsx, role-workspace-dashboard.tsx (generic role dashboard renderer), stats-card.tsx, student-card.tsx, student-hint-card.tsx, bubble-background.tsx, theme-provider.tsx
+components/enrollment/ — CourseSelector.tsx, RosterList.tsx, ScheduleGrid.tsx
+components/student/ — course-catalog.tsx, courses-table.tsx, grade-breakdown.tsx, grades-table.tsx, profile-card.tsx, student-overview.tsx
+components/ui/ — full shadcn/ui-style Radix wrapper library (accordion, alert-dialog, avatar, badge, calendar, card, carousel, chart, checkbox, command, confirm-dialog, dialog, drawer, dropdown-menu, form, input, item, kbd, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, and more)
+frontend/lib/ — API client layer, one file per domain, all likely wrapping the /api/* proxy:
+api-client.ts (base fetch wrapper), auth-context.tsx (React context: login/logout, JWT storage, hasPermission, effective permissions, notifications, password mgmt, profile update), dashboard-api.ts, enrollment-api.ts, feedback-api.ts, finance-api.ts, finance-request-events.ts, news-api.ts, professor-api.ts, professor-workspace-api.ts, questions-api.ts, site-content-api.ts, students-api.ts, users-api.ts, utils.ts.
+
+5. API Endpoints (grouped by domain)
+Base URL prefix per server.ts; all require Authorization: Bearer <JWT> except the public paths noted in section 7.
+
+Auth/Users (/api/users)
+GET /custom-roles, POST /custom-roles, PUT /custom-roles/:id, DELETE /custom-roles/:id, GET /, GET /:id, POST /, PUT /:id, DELETE /:id, POST /auth/login (rate-limited, public), PATCH /:id/password, POST /:id/password/admin, GET /:id/notifications
+
+Students (/api/students)
+GET /, GET /me, GET /self, PUT /self, GET /:id, POST /, PUT /:id, DELETE /:id, GET /:id/balance, GET /:id/financial, GET /:id/transactions, POST /:id/payments, POST /:id/schedule/preview, GET /:id/grades, GET /:id/transcript, GET /:id/transcript.csv, GET /:id/transcript.pdf
+
+Professors (/api/professors)
+GET /, GET /:id, POST /, PUT /:id, DELETE /:id
+
+Professor Workspace (/api/professor-workspace)
+GET /courses/:courseId, GET /courses/:courseId/mock-classes, POST /courses/:courseId/mock-classes/availability, POST /courses/:courseId/mock-classes, POST /courses/:courseId/publish-marks, POST /courses/:courseId/:section, PUT /courses/:courseId/:section/:itemId, DELETE /courses/:courseId/:section/:itemId
+
+Enrollments (/api/enrollments) — largest domain
+GET /meta/courses, POST /meta/courses (admin), GET /meta/academic-structure, PUT /meta/academic-structure (admin), PATCH /meta/enrollment-toggle (admin), PUT /meta/courses/:id (admin), POST /meta/courses/bulk-update (admin), PUT /meta/courses/:id/schedule, POST /schedule/preview, DELETE /meta/courses/:id (admin), GET /meta/summary, GET /, POST /self, DELETE /self/:id, POST /:id/approve-payment, POST /:id/reject-payment, POST /:id/request-advisor-approval, POST /:id/advisor-approve, POST /:id/advisor-reject, POST /:id/advisor-message, PUT /:id/grades, POST / (create), POST /:id/approve, GET /:id, PUT /:id (admin), DELETE /:id (admin)
+
+Admin Schedule (/api/admin)
+GET /schedule/at-time, GET /schedule/available-rooms, POST /schedule/update-room, plus one more GET around line 419
+
+Finance (/api/finance)
+GET/POST /invoices, GET/POST /installment-plans, GET/POST /sponsorships, GET/POST /refunds, POST /refunds/:id/approve, POST /payments/:id/confirm, GET /unpaid-balances, GET /reports/summary, GET/POST /requests, POST /requests/:id/handle, PUT /requests/:id, DELETE /requests/:id
+
+Payments (/api/payments): GET /
+Income (/api/income): GET /, GET /:id, POST /, PUT /:id, DELETE /:id
+Expenses (/api/expenses): GET /, GET /:id, POST /, PUT /:id, DELETE /:id
+Coupons (/api/coupons): GET /, POST / (admin)
+
+Feedback (/api/feedback): GET /, GET /:id, POST / (public for admissions form), PUT /:id, DELETE /:id
+News (/api/news): GET /, GET /:id, POST /, PUT /:id, DELETE /:id (marketing:manage permission)
+Questions (/api/questions): GET /, POST /, GET /professor, GET /admin, PUT /:id/reply
+
+Dashboard (/api/dashboard): GET /stats, GET /overview
+
+Admissions (/api/admissions): scholarship-awards, interview-schedules, offer-letters — full CRUD each
+Registrar (/api/registrar): enrollment-overrides, transfer-credits, transcript-requests, graduation-approvals — full CRUD each
+Facilities (/api/facilities): maintenance-requests, equipment-requests, room-bookings — full CRUD each
+IT Admin (/api/it-admin): sso-config (CRUD), integrations (CRUD), GET/PUT maintenance-state, device-logs (GET/POST)
+Research Office (/api/research-office): research-grants, publications, research-requests — full CRUD each
+Security (/api/security): visitor-logs, incident-reports, id-card-access — full CRUD each
+
+Site Content: GET /api/public/site-content (public), PUT /api/site-content (admin)
+Student Hints: GET /api/student/hints
+Health: GET /api/health (public)
+
+6. Existing Docs — Status Summary
+Project Overview.md — High-level product pitch: university admin + student portal for "University of New York Tirana." States goals (reduce admin work, centralize records, faster student access, accurate finance, modern brand). Lists KPIs from seeded baseline (2 students, 2 professors, 2 courses, 1 enrollment, 2 payments, etc., 6 demo accounts across 6 roles) — note: this predates the later 17-role expansion seen in cover.md/users.md. Confirms core modules: Students, Professors, Users, Courses, Enrollments, Payments, Income, Expenses, Feedback, News, Questions, Notifications, Site content.
+
+cover.md — Defines the full 17-role model (Student, Professor, TA, Academic Advisor, Registrar, Admissions Officer, Finance Staff, IT Admin, Dean, HOD, Librarian, Super Admin, Student Affairs, HR Staff, Security Officer, Facilities Manager, Research Officer) with one-line responsibility each. Lists feature set: role-based dashboards, student/professor mgmt, enrollment/class mgmt, admissions, finance tracking/approvals, news/feedback, audit logs, user mgmt, settings/requests.
+
+missing.md — Most actionable gap-tracking doc. Lists tables referenced by backend but missing from schema at time of writing (now mostly created via simulation_seed.sql): maintenance_state, id_card_access, sso_config, device_logs, transfer_credits, transcript_requests, graduation_approvals, enrollment_overrides, scholarship_awards, interview_schedules, offer_letters. States current behavior: missing collections return empty results instead of crashing (resilience pattern confirmed in code). Lists still-needed seed data: student year-level assignment, advisor assignment, professor/course-group linkage, department assignment; finance state coverage (paid/partial/unpaid/scholarship, holds, zero/positive balance); registration state coverage (open/closed/blocked-by-balance). Explicitly says maintenance_state was "the original blocker for login and API startup" — now resolved.
+
+last thing was working on .md — Terse scratch notes: professor/student demo logins (anasprof/tmm2010mt), a TODO to "make a section for the course department or common" and "the semesters for the class and the enrollment and courses" — unfinished/TODO item around course department categorization and semester-based enrollment.
+
+test.md — Demo credentials table for all 17 roles (all Test@1234 except student tmm2010mt). Marks Student role as "done 40%" — the only role with an explicit completion percentage, implying other roles are earlier-stage or unverified. Also contains loose UI/UX TODOs: make invoice/unpaid-balance dashboard tiles lighter/bigger, lighten dark-blue color scheme, restrict Finance role's student-editing to finance fields only (not full student record), and fix Requests semantics (admin should be able to delete/edit requests and see requests sent to them, correcting a described direction confusion — "he is the one will receive requests, no he will send them").
+
+users.md — Large idempotent SQL seed script inserting 3 demo users per role (51 total) across all 17 roles, with realistic names/emails/phones/departments, plus ALTER TYPE user_role ADD VALUE statements to extend the original 6-value enum to the full role set, and ALTER TABLE users ADD COLUMN for full_name, phone, department.
+
+tahasql.md — The canonical database schema (Supabase SQL Editor script): enums, all core tables, indexes. This is the primary source for the ER diagram (detailed in section 3).
+
+cover.md vs Project Overview.md vs test.md together show a progression: original design had 6 roles/simple schema (Project Overview's "6 demo user accounts across 6 roles") → expanded to 17 granular roles (cover.md, users.md, test.md) with corresponding permission matrix in middleware/auth.ts and enum extension in users.md. Many role-specific modules (admissions, registrar, facilities, IT admin, research office, security) have full CRUD routes and dedicated dashboard pages but their backing tables were only added via simulation_seed.sql, and seed data completeness for the finance/registration/academic simulation scenarios (per missing.md) is explicitly flagged as still TODO.
+
+Rough DONE / IN PROGRESS / TODO synthesis
+DONE: Core CRUD for students, professors, courses, enrollments, payments, income, expenses, feedback, news, questions, users/auth (JWT + role permissions), site content, dashboard stats, 17-role permission matrix, enrollment approval/grading workflow, transcripts, finance invoicing/installments/sponsorships/refunds, most role-specific admin modules (admissions, registrar, facilities, IT admin, research office, security) at the route/table level.
+IN PROGRESS / PARTIAL: Student role UI explicitly marked "40% done" (test.md); seed data for realistic finance/registration/academic-year simulation across roles (missing.md); UI polish items (color scheme, tile sizing) noted as pending (test.md); Finance role's edit scope on student records needs restriction (test.md); Requests feature direction/semantics needs correction re admin send-vs-receive (test.md).
+TODO: Course-department/"common" course categorization section, semester-linked class/enrollment structuring ("last thing was working on" note) — ties to the courseType ("major"|"common") and baseCourseIds/base-course-assignment logic already scaffolded in shared/types and lib/base-course-assignment.ts, suggesting this was mid-implementation.
+7. Auth & Roles
+Mechanism: Stateless JWT (jsonwebtoken), 12-hour expiry, signed with JWT_SECRET env var (falls back to an insecure dev secret with a console warning; throws in production if unset). Login endpoint: POST /api/users/auth/login (rate-limited via rateLimitLogin), password verified with bcryptjs.
+
+Request auth flow (backend/src/middleware/auth.ts):
+
+requireAuth middleware runs globally on every request except an explicit public-path allowlist: /api/health, /api/users/auth/login, /api/public/site-content, /api/it-admin/maintenance-state (GET, so admins can recover from lockout), and POST /api/feedback (public admissions form submissions).
+Verifies Authorization: Bearer <token>, decodes JWT payload into req.auth (AuthContext), and computes effectivePermissions by merging the role's base permission set + any secondaryRoles + per-user permissions overrides (AuthTokenPayload.permissions allows individual grant/revoke).
+enforceMaintenanceMode middleware then checks the maintenance_state table; if enabled, blocks all non-exempt roles with HTTP 503 (admin/super-admin/it-admin are exempt). Tolerates the table not existing yet (42P01) by skipping enforcement.
+Authorization helpers: requireAdmin (admin/super-admin/supervisor only), requirePermission(...perms) (admin/super-admin bypass; others must have all listed permissions in effectivePermissions).
+
+Roles (SystemRole type in shared/types/index.ts, 20 values): admin, super-admin, supervisor, user, student, professor, advisor, teaching-assistant, registrar, admissions, finance, it-admin, dean, hod, librarian, student-affairs, hr, security, facilities, research-office.
+
+Each role has a hardcoded permission array in rolePermissions (middleware/auth.ts), e.g.:
+
+admin/super-admin: near-full permission set (manage_users, students/professors/finance/enrollment/feedback/news/audit/reports CRUD+approve, ADMIN_VIEW_SCHEDULE, MANAGE_RESOURCES, settings incl. security/integrations/sso)
+student: enrollment:self only
+professor: ENTER_GRADES, edit_own_grades
+finance: finance:view/manage/approve, VIEW_FINANCIALS, reports:view/export
+registrar: user create/edit, student create/edit, enrollment manage, edit_any_grade, ADMIN_VIEW_SCHEDULE, MANAGE_RESOURCES
+Granular per-role permission lists exist for all 20 roles.
+Permission model is a flat string-union type Permission (referenced from shared/types) covering resource-scoped actions like students:view/create/edit/delete, finance:view/manage/approve, enrollment:view/manage/self/override-window/override-capacity, audit:view/export, settings:manage/security/integrations/sso, plus some legacy uppercase constants (VIEW_FINANCIALS, ADMIN_VIEW_SCHEDULE, MANAGE_RESOURCES, override_capacity, edit_any_grade, ENTER_GRADES, edit_own_grades) — suggesting the permission system evolved incrementally and mixes two naming conventions.
+
+Frontend auth: frontend/lib/auth-context.tsx — React Context (AuthProvider) storing AuthUser (id, username, displayName, email, role, secondaryRoles, avatarUrl, studentId/professorId, permissions, customRoleId/Name, accessProfile), exposing login/logout/updatePassword/adminResetPassword/fetchUserNotifications/updateProfile/hasPermission/effectivePermissions/isAdmin/isStudent. Talks to backend via /api (proxied through frontend/app/api/[...path]/route.ts, a Next.js catch-all route handler) or directly via NEXT_PUBLIC_API_URL if set. Route protection enforced client-side via frontend/components/dashboard-route-guard.tsx, gating each /dashboard/<role> and /student/* route tree.
+
+Custom roles: users.ts also exposes /custom-roles CRUD, and User/CustomRoleTemplate types support a baseRole + per-permission override + AccessProfile (fine-grained boolean flags like allowEnrollmentAnytime, allowFinanceApprovals, allowAuditExports, etc.) — an extensibility layer beyond the fixed 20 roles.

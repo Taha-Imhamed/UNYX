@@ -1,0 +1,26 @@
+{
+  "name": "ar-company",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AR Company Admin Dashboard - Monorepo",
+  "workspaces": [
+    "frontend",
+    "backend",
+    "shared"
+  ],
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter @ar-company/backend dev\" \"pnpm --filter @ar-company/frontend dev\"",
+    "dev:frontend": "pnpm --filter @ar-company/frontend dev",
+    "dev:backend": "pnpm --filter @ar-company/backend dev",
+    "build": "pnpm --filter ./frontend --filter ./backend build",
+    "build:frontend": "pnpm --filter @ar-company/frontend build",
+    "build:backend": "pnpm --filter @ar-company/backend build",
+    "start": "concurrently \"pnpm --filter @ar-company/backend start\" \"pnpm --filter @ar-company/frontend start\"",
+    "start:frontend": "pnpm --filter @ar-company/frontend start",
+    "start:backend": "pnpm --filter @ar-company/backend start",
+    "lint": "pnpm --filter @ar-company/frontend lint && pnpm --filter @ar-company/backend lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

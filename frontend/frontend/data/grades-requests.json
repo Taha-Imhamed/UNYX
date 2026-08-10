@@ -1,0 +1,25 @@
+[
+  {
+    "id": "momqds05-nd7sk4p",
+    "createdAt": "2026-05-01T09:49:14.885Z",
+    "status": "approved",
+    "reviewedBy": null,
+    "reviewedAt": "2026-05-01T09:55:38.012Z",
+    "responseNote": null,
+    "enrollmentId": "ENR-4A92C09A",
+    "courseId": "COURSE-SE-BCB46B6D",
+    "studentId": "STU-AC24FC01",
+    "studentName": "taha imhamed",
+    "courseCode": "MATH 101",
+    "courseTitle": "Calculus I",
+    "professorId": "PROF-6DAB86DF",
+    "professorName": "anasprof",
+    "newGrades": {
+      "gradeMidterm": 0,
+      "gradeFinal": 4,
+      "gradeProject": 2,
+      "gradeParticipation": 8
+    },
+    "reason": "test"
+  }
+]

@@ -504,14 +504,16 @@ class PostgresCollection<T extends Record<string, unknown>> implements Collectio
   }
 
   private async loadAll() {
+    let tableName: string | undefined
     try {
-      const { tableName, columnMap } = await getTableInfo(this.collectionName)
-      const { rows } = await getPool().query<RowRecord>(`select * from ${quoteIdentifier(tableName)}`)
-      return rows.map((row) => rowToDocument(row, columnMap)) as T[]
+      const tableInfo = await getTableInfo(this.collectionName)
+      tableName = tableInfo.tableName
+      const { rows } = await getPool().query<RowRecord>(`select * from ${quoteIdentifier(tableInfo.tableName)}`)
+      return rows.map((row) => rowToDocument(row, tableInfo.columnMap)) as T[]
     } catch (error) {
       if (isMissingRelationError(error)) {
         logger.warn(
-          { collection: this.collectionName },
+          { collection: this.collectionName, tableName, code: (error as { code?: string }).code },
           `[db] missing table for collection ${this.collectionName}; returning empty result`,
         )
         return [] as T[]

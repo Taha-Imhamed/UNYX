@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fetchEnrollments, type EnrollmentRecord } from "@/lib/enrollment-api"
 import { fetchStudents } from "@/lib/students-api"
 import type { Student } from "@shared/types"
+import { deriveStudentYearLevel } from "@/lib/academic-terms"
 import { BookOpen, ChevronDown, Search } from "lucide-react"
 
 const DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -165,9 +166,9 @@ export default function AdviseeStudentsPage() {
                       <Badge variant={student.status === "active" ? "default" : "secondary"} className="text-xs">
                         {student.status}
                       </Badge>
-                      {student.currentSemester && (
+                      {deriveStudentYearLevel(student) && (
                         <Badge variant="outline" className="text-xs">
-                          Sem {student.currentSemester}
+                          Year {deriveStudentYearLevel(student)}
                         </Badge>
                       )}
                     </div>

@@ -73,11 +73,12 @@ import {
   createCourseRequest,
   deleteCourseRequest,
   fetchDeletedCourses,
+  fetchSemesters,
   restoreDeletedCourseRequest,
   updateCourseRequest,
   type DeletedCourseEntry,
 } from "@/lib/enrollment-api"
-import type { Course } from "@shared/types"
+import type { Course, Semester } from "@shared/types"
 
 export default function EnrollmentCoursesPage() {
   const { toast } = useToast()
@@ -132,6 +133,18 @@ export default function EnrollmentCoursesPage() {
     loading: false,
     error: null,
   })
+  const [semesters, setSemesters] = useState<Semester[]>([])
+
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    fetchSemesters(controller.signal)
+      .then(setSemesters)
+      .catch(() => {
+        if (!controller.signal.aborted) setSemesters([])
+      })
+    return () => controller.abort()
+  }, [enabled, refreshVersion])
 
   const majors = academicStructure?.majors ?? EMPTY_MAJORS
   const departments = academicStructure?.departments ?? EMPTY_DEPARTMENTS
@@ -232,6 +245,7 @@ export default function EnrollmentCoursesPage() {
       eligibleYears: getEligibleYearValues(course.eligibleSemesters),
       eligiblePrograms: Array.isArray(course.eligiblePrograms) ? (course.eligiblePrograms as string[]) : [],
       prerequisiteCourseIds: Array.isArray(course.prerequisiteCourseIds) ? (course.prerequisiteCourseIds as string[]) : [],
+      semesterId: course.semesterId ?? "",
     })
     const prof = professors.find((p) => p.id === course.professorId)
     setProfessorDepartment(prof?.department ?? "all")
@@ -320,6 +334,7 @@ export default function EnrollmentCoursesPage() {
       location: activeTemplate.location ?? prev.location,
       courseType: activeTemplate.courseType === "common" ? "common" : prev.courseType,
       eligibleYears: getEligibleYearValues(activeTemplate.eligibleSemesters),
+      semesterId: activeTemplate.semesterId ?? prev.semesterId,
     }))
   }, [courseDialogMode, courseDialogOpen, courses, selectedCourseTemplateId])
 
@@ -354,6 +369,7 @@ export default function EnrollmentCoursesPage() {
         eligibleSemesters: courseForm.eligibleYears.map((year) => `year ${year}`),
         eligiblePrograms: eligiblePrograms.length > 0 ? eligiblePrograms : undefined,
         prerequisiteCourseIds: courseForm.prerequisiteCourseIds.length > 0 ? courseForm.prerequisiteCourseIds : undefined,
+        semesterId: courseForm.semesterId || null,
       }
       if (courseDialogMode === "create") {
         const created = await createCourseRequest(payload)
@@ -1054,6 +1070,7 @@ export default function EnrollmentCoursesPage() {
         departments={departments}
         campuses={campuses}
         majors={majors}
+        semesters={semesters}
         courseSaving={courseSaving}
         courseError={courseError}
         onSubmit={handleCourseSubmit}

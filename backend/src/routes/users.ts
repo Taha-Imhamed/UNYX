@@ -14,6 +14,7 @@ import { logger } from '../lib/logger.js'
 import { createRateLimiter } from '../middleware/rate-limit.js'
 import { readPagination, UNPAGINATED_SAFETY_CAP } from '../lib/pagination.js'
 import { writeAuditLog } from '../lib/academic-compliance.js'
+import { generateStudentId, generateProfessorId } from '../lib/id-generator.js'
 
 export const userRoutes: ReturnType<typeof Router> = Router()
 
@@ -64,7 +65,7 @@ const rateLimitAdminReset = createRateLimiter({
   keyGenerator: (req) => req.auth?.userId || req.ip || req.socket.remoteAddress || 'unknown',
 })
 
-type StoredUserDocument = {
+export type StoredUserDocument = {
   id: string;
   username: string;
   normalizedUsername: string;
@@ -328,9 +329,6 @@ function findOfflineUser(input: string, password: string): StoredUserDocument | 
   return { ...match }
 }
 
-function buildStudentId() {
-  return `STU-${randomUUID().slice(0, 8).toUpperCase()}`
-}
 function normalizeStudentDateOfBirth(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : '2000-01-01'
 }
@@ -411,7 +409,10 @@ function buildStudentDocument(input: {
   }
 
   if (profile.currentYear !== undefined) {
-    (student as Student & Record<string, unknown>).currentYear = Number(profile.currentYear)
+    const parsedYear = Number(profile.currentYear)
+    const yearLevel = Number.isFinite(parsedYear) && parsedYear > 0 ? Math.floor(parsedYear) : null
+    student.currentYear = yearLevel
+    student.yearLevel = yearLevel
   }
 
   applyOptionalStudentFields(student as Partial<Student> & Record<string, unknown>, profile)
@@ -456,6 +457,7 @@ function buildStudentUpdatePayload(profile: Record<string, unknown>, fallbackEma
     if (Number.isFinite(currentYear) && currentYear > 0) {
       updates.currentSemester = `Year ${Math.floor(currentYear)}`
       updates.currentYear = Math.floor(currentYear)
+      updates.yearLevel = Math.floor(currentYear)
     }
   }
 
@@ -472,8 +474,13 @@ function buildStudentUpdatePayload(profile: Record<string, unknown>, fallbackEma
   return updates
 }
 
-function buildProfessorId() {
-  return `PROF-${randomUUID().slice(0, 8).toUpperCase()}`
+function pickStudentDepartmentSource(profile: Record<string, unknown> | undefined) {
+  if (!profile) return null
+  const candidates = [profile.program, profile.major, profile.faculty]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+  }
+  return null
 }
 
 function escapeRegex(input: string) {
@@ -703,7 +710,7 @@ function defaultPermissionsForRole(role: StoredUserDocument['role']): Partial<Re
   }
 }
 
-const userCreateSchema = z.object({
+export const userCreateSchema = z.object({
   username: z.string().trim().min(1),
   email: z.string().trim().email(),
   role: z.enum(SYSTEM_ROLE_VALUES).default('user'),
@@ -896,156 +903,171 @@ userRoutes.get('/:id', async (req, res) => {
   }
 })
 
+export class UserCreateConflictError extends Error {}
+export class UserCreateValidationError extends Error {}
+
+// Core creation logic shared by the POST / route handler and the AI assistant's
+// create_user tool (backend/src/lib/ai-tools.ts) — kept as one function so a future
+// bugfix to user-creation behavior can't silently drift between the two callers.
+export async function createUserCore(input: z.infer<typeof userCreateSchema>): Promise<StoredUserDocument> {
+  await ensureUserAdminStorage()
+  const {
+    username,
+    email,
+    role,
+    password,
+    avatarUrl,
+    permissions,
+    customRoleId,
+    customRoleName,
+    accessProfile,
+    studentId,
+    professorId,
+    secondaryRoles,
+    student: studentProfile,
+    professor: professorProfile,
+  } = input
+
+  const normalizedUsername = username.toLowerCase()
+  const usersCollection = await getCollection<StoredUserDocument>(USERS_COLLECTION)
+
+  const existing = await usersCollection.findOne({ normalizedUsername })
+  if (existing) {
+    throw new UserCreateConflictError('Username already exists')
+  }
+
+  const existingEmail = await usersCollection.findOne({ email })
+  if (existingEmail) {
+    throw new UserCreateConflictError('Email already exists')
+  }
+
+  const customRoleSelection = await resolveCustomRoleSelection({ customRoleId, role })
+  const normalizedAccessProfile = normalizeAccessProfile(accessProfile)
+
+  const timestamp = new Date().toISOString()
+  const hashedPassword = password.startsWith('$2') ? password : await bcrypt.hash(password, 10)
+  const newUser: StoredUserDocument = {
+    id: `USR${Date.now()}`,
+    username: username.trim(),
+    normalizedUsername,
+    email: email.trim(),
+    role,
+    secondaryRoles: Array.isArray(secondaryRoles)
+      ? Array.from(new Set(secondaryRoles.filter((entry) => entry !== role)))
+      : [],
+    createdAt: timestamp,
+    lastLogin: timestamp,
+    status: 'active',
+    avatarUrl: typeof avatarUrl === 'string' && avatarUrl.trim() ? avatarUrl : null,
+    password: hashedPassword,
+    permissions:
+      permissions && typeof permissions === 'object'
+        ? permissions
+        : customRoleSelection.inheritedPermissions ?? defaultPermissionsForRole(role),
+    customRoleId: customRoleSelection.customRoleId,
+    customRoleName: customRoleSelection.customRoleName ?? (typeof customRoleName === 'string' && customRoleName.trim() ? customRoleName.trim() : null),
+    accessProfile: normalizedAccessProfile ?? customRoleSelection.inheritedAccessProfile ?? {},
+    studentId: role === 'student' && typeof studentId === 'string' && studentId.trim() ? studentId.trim() : null,
+    professorId: role === 'professor' && typeof professorId === 'string' && professorId.trim() ? professorId.trim() : null,
+  }
+
+  if (newUser.role === 'student' && !newUser.studentId) {
+    const studentsCol = await studentsCollection()
+    const newStudentId = await generateStudentId(pickStudentDepartmentSource(studentProfile as Record<string, unknown> | undefined))
+    const advisorUsers = await usersCollection.find({ role: 'advisor', status: 'active' }).toArray()
+    const randomAdvisor = advisorUsers.length > 0
+      ? advisorUsers[Math.floor(Math.random() * advisorUsers.length)]
+      : null
+    const student = buildStudentDocument({
+      id: newStudentId,
+      username,
+      email,
+      studentProfile,
+      supervisorId: randomAdvisor?.id,
+      supervisorName: randomAdvisor?.username,
+    })
+
+    await studentsCol.insertOne(student)
+    newUser.studentId = student.id
+    await assignBaseCoursesToFirstYearStudent(student)
+  }
+
+  if (newUser.role === 'student' && newUser.studentId) {
+    const studentsCol = await studentsCollection()
+    const existingStudent = await studentsCol.findOne({ id: newUser.studentId })
+    if (!existingStudent) {
+      throw new UserCreateValidationError(
+        `Student ID ${newUser.studentId} does not exist. Leave it empty to auto-create a student profile.`,
+      )
+    }
+    if (studentProfile && typeof studentProfile === 'object') {
+      const studentUpdates = buildStudentUpdatePayload(studentProfile, email.trim())
+      await studentsCol.updateOne({ id: newUser.studentId }, { $set: studentUpdates })
+      const updatedStudent = await studentsCol.findOne({ id: newUser.studentId })
+      await assignBaseCoursesToFirstYearStudent(updatedStudent ?? existingStudent)
+    } else {
+      await assignBaseCoursesToFirstYearStudent(existingStudent)
+    }
+  }
+
+  if (newUser.role === 'professor' && !newUser.professorId) {
+    const professorsCol = await professorsCollection()
+    const profile = professorProfile ?? {}
+    const department = typeof profile.department === 'string' && profile.department.trim() ? profile.department.trim() : 'General'
+    const newProfId = await generateProfessorId(department)
+    const professor: Professor = {
+      id: newProfId,
+      firstName: typeof profile.firstName === 'string' && profile.firstName.trim() ? profile.firstName.trim() : username.trim(),
+      lastName: typeof profile.lastName === 'string' && profile.lastName.trim() ? profile.lastName.trim() : '',
+      email: typeof profile.email === 'string' && profile.email.trim() ? profile.email.trim() : email.trim(),
+      phone: typeof profile.phone === 'string' ? profile.phone.trim() : '',
+      photo: typeof profile.photo === 'string' && profile.photo.trim() ? profile.photo.trim() : '/placeholder-user.jpg',
+      department,
+      salary: typeof profile.salary === 'number' ? profile.salary : Number(profile.salary) || 0,
+      hireDate:
+        typeof profile.hireDate === 'string' && profile.hireDate.trim() ? profile.hireDate.trim() : new Date().toISOString(),
+      specialization: typeof profile.specialization === 'string' ? profile.specialization.trim() : '',
+      status:
+        profile.status === 'on-leave' || profile.status === 'retired'
+          ? profile.status
+          : 'active',
+    }
+
+    await professorsCol.insertOne(professor)
+    newUser.professorId = professor.id
+  }
+
+  if (newUser.role === 'professor' && newUser.professorId) {
+    const professorsCol = await professorsCollection()
+    const existingProfessor = await professorsCol.findOne({ id: newUser.professorId })
+    if (!existingProfessor) {
+      throw new UserCreateValidationError(
+        `Professor ID ${newUser.professorId} does not exist. Leave it empty to auto-create a professor profile.`,
+      )
+    }
+  }
+
+  await usersCollection.insertOne(newUser)
+  return newUser
+}
+
 userRoutes.post('/', requirePermission('users:manage'), async (req, res) => {
   try {
-    await ensureUserAdminStorage()
     const parsed = userCreateSchema.safeParse(req.body ?? {})
     if (!parsed.success) {
       return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid payload' })
     }
 
-    const {
-      username,
-      email,
-      role,
-      password,
-      avatarUrl,
-      permissions,
-      customRoleId,
-      customRoleName,
-      accessProfile,
-      studentId,
-      professorId,
-      secondaryRoles,
-      student: studentProfile,
-      professor: professorProfile,
-    } = parsed.data
-
-    const normalizedUsername = username.toLowerCase()
-    const usersCollection = await getCollection<StoredUserDocument>(USERS_COLLECTION)
-
-    const existing = await usersCollection.findOne({ normalizedUsername })
-    if (existing) {
-      return res.status(409).json({ success: false, error: 'Username already exists' })
-    }
-
-    const existingEmail = await usersCollection.findOne({ email })
-    if (existingEmail) {
-      return res.status(409).json({ success: false, error: 'Email already exists' })
-    }
-
-    const customRoleSelection = await resolveCustomRoleSelection({ customRoleId, role })
-    const normalizedAccessProfile = normalizeAccessProfile(accessProfile)
-
-    const timestamp = new Date().toISOString()
-    const hashedPassword = password.startsWith('$2') ? password : await bcrypt.hash(password, 10)
-    const newUser: StoredUserDocument = {
-      id: `USR${Date.now()}`,
-      username: username.trim(),
-      normalizedUsername,
-      email: email.trim(),
-      role,
-      secondaryRoles: Array.isArray(secondaryRoles)
-        ? Array.from(new Set(secondaryRoles.filter((entry) => entry !== role)))
-        : [],
-      createdAt: timestamp,
-      lastLogin: timestamp,
-      status: 'active',
-      avatarUrl: typeof avatarUrl === 'string' && avatarUrl.trim() ? avatarUrl : null,
-      password: hashedPassword,
-      permissions:
-        permissions && typeof permissions === 'object'
-          ? permissions
-          : customRoleSelection.inheritedPermissions ?? defaultPermissionsForRole(role),
-      customRoleId: customRoleSelection.customRoleId,
-      customRoleName: customRoleSelection.customRoleName ?? (typeof customRoleName === 'string' && customRoleName.trim() ? customRoleName.trim() : null),
-      accessProfile: normalizedAccessProfile ?? customRoleSelection.inheritedAccessProfile ?? {},
-      studentId: role === 'student' && typeof studentId === 'string' && studentId.trim() ? studentId.trim() : null,
-      professorId: role === 'professor' && typeof professorId === 'string' && professorId.trim() ? professorId.trim() : null,
-    }
-
-    if (newUser.role === 'student' && !newUser.studentId) {
-      const studentsCol = await studentsCollection()
-      const newStudentId = buildStudentId()
-      const advisorUsers = await usersCollection.find({ role: 'advisor', status: 'active' }).toArray()
-      const randomAdvisor = advisorUsers.length > 0
-        ? advisorUsers[Math.floor(Math.random() * advisorUsers.length)]
-        : null
-      const student = buildStudentDocument({
-        id: newStudentId,
-        username,
-        email,
-        studentProfile,
-        supervisorId: randomAdvisor?.id,
-        supervisorName: randomAdvisor?.username,
-      })
-
-      await studentsCol.insertOne(student)
-      newUser.studentId = student.id
-      await assignBaseCoursesToFirstYearStudent(student)
-    }
-
-    if (newUser.role === 'student' && newUser.studentId) {
-      const studentsCol = await studentsCollection()
-      const existingStudent = await studentsCol.findOne({ id: newUser.studentId })
-      if (!existingStudent) {
-        return res.status(400).json({
-          success: false,
-          error: `Student ID ${newUser.studentId} does not exist. Leave it empty to auto-create a student profile.`,
-        })
-      }
-      if (studentProfile && typeof studentProfile === 'object') {
-        const studentUpdates = buildStudentUpdatePayload(studentProfile, email.trim())
-        await studentsCol.updateOne({ id: newUser.studentId }, { $set: studentUpdates })
-        const updatedStudent = await studentsCol.findOne({ id: newUser.studentId })
-        await assignBaseCoursesToFirstYearStudent(updatedStudent ?? existingStudent)
-      } else {
-        await assignBaseCoursesToFirstYearStudent(existingStudent)
-      }
-    }
-
-    if (newUser.role === 'professor' && !newUser.professorId) {
-      const professorsCol = await professorsCollection()
-      const newProfId = buildProfessorId()
-      const profile = professorProfile ?? {}
-      const professor: Professor = {
-        id: newProfId,
-        firstName: typeof profile.firstName === 'string' && profile.firstName.trim() ? profile.firstName.trim() : username.trim(),
-        lastName: typeof profile.lastName === 'string' && profile.lastName.trim() ? profile.lastName.trim() : '',
-        email: typeof profile.email === 'string' && profile.email.trim() ? profile.email.trim() : email.trim(),
-        phone: typeof profile.phone === 'string' ? profile.phone.trim() : '',
-        photo: typeof profile.photo === 'string' && profile.photo.trim() ? profile.photo.trim() : '/placeholder-user.jpg',
-        department: typeof profile.department === 'string' && profile.department.trim() ? profile.department.trim() : 'General',
-        salary: typeof profile.salary === 'number' ? profile.salary : Number(profile.salary) || 0,
-        hireDate:
-          typeof profile.hireDate === 'string' && profile.hireDate.trim() ? profile.hireDate.trim() : new Date().toISOString(),
-        specialization: typeof profile.specialization === 'string' ? profile.specialization.trim() : '',
-        status:
-          profile.status === 'on-leave' || profile.status === 'retired'
-            ? profile.status
-            : 'active',
-      }
-
-      await professorsCol.insertOne(professor)
-      newUser.professorId = professor.id
-    }
-
-    if (newUser.role === 'professor' && newUser.professorId) {
-      const professorsCol = await professorsCollection()
-      const existingProfessor = await professorsCol.findOne({ id: newUser.professorId })
-      if (!existingProfessor) {
-        return res.status(400).json({
-          success: false,
-          error: `Professor ID ${newUser.professorId} does not exist. Leave it empty to auto-create a professor profile.`,
-        })
-      }
-    }
-
-    await usersCollection.insertOne(newUser)
-
+    const newUser = await createUserCore(parsed.data)
     res.status(201).json({ success: true, data: sanitizeUser(newUser), message: 'User created' })
   } catch (error) {
     logger.error({ err: error }, 'User create failed')
+    if (error instanceof UserCreateConflictError) {
+      return res.status(409).json({ success: false, error: error.message })
+    }
+    if (error instanceof UserCreateValidationError) {
+      return res.status(400).json({ success: false, error: error.message })
+    }
     if (error instanceof Error && error.message.toLowerCase().includes('custom role')) {
       return res.status(400).json({ success: false, error: error.message })
     }
@@ -1211,7 +1233,7 @@ userRoutes.put('/:id', async (req, res) => {
 
     if (targetRole === 'student' && !updates.studentId && !user.studentId) {
       const studentsCol = await studentsCollection()
-      const newStudentId = buildStudentId()
+      const newStudentId = await generateStudentId(pickStudentDepartmentSource(studentProfile as Record<string, unknown> | undefined))
       const student = buildStudentDocument({
         id: newStudentId,
         username: updates.username ?? user.username,
@@ -1244,8 +1266,9 @@ userRoutes.put('/:id', async (req, res) => {
 
     if (targetRole === 'professor' && !updates.professorId && !user.professorId) {
       const professorsCol = await professorsCollection()
-      const newProfId = buildProfessorId()
       const profile = req.body?.professor || {}
+      const department = typeof profile.department === 'string' && profile.department.trim() ? profile.department.trim() : 'General'
+      const newProfId = await generateProfessorId(department)
       const professor: Professor = {
         id: newProfId,
         firstName: typeof profile.firstName === 'string' && profile.firstName.trim() ? profile.firstName.trim() : (updates.username ?? user.username),
@@ -1253,7 +1276,7 @@ userRoutes.put('/:id', async (req, res) => {
         email: typeof profile.email === 'string' && profile.email.trim() ? profile.email.trim() : updates.email ?? user.email,
         phone: typeof profile.phone === 'string' ? profile.phone.trim() : '',
         photo: typeof profile.photo === 'string' && profile.photo.trim() ? profile.photo.trim() : '/placeholder-user.jpg',
-        department: typeof profile.department === 'string' && profile.department.trim() ? profile.department.trim() : 'General',
+        department,
         salary: typeof profile.salary === 'number' ? profile.salary : Number(profile.salary) || 0,
         hireDate: typeof profile.hireDate === 'string' && profile.hireDate.trim() ? profile.hireDate.trim() : new Date().toISOString(),
         specialization: typeof profile.specialization === 'string' ? profile.specialization.trim() : '',
@@ -1468,7 +1491,7 @@ userRoutes.post('/auth/login', rateLimitLogin, async (req, res) => {
         const existingByEmail = (await studentsCol.findOne({ email: user.email })) ?? (await studentsCol.findOne({ displayId: user.username }))
         if (existingByEmail) return existingByEmail.id
 
-        const generatedId = buildStudentId()
+        const generatedId = await generateStudentId(null)
         const student: Student = {
           id: generatedId,
           displayId: generatedId,
@@ -1543,7 +1566,7 @@ userRoutes.post('/auth/login', rateLimitLogin, async (req, res) => {
           return matchedProfessor.id
         }
 
-        const generatedId = buildProfessorId()
+        const generatedId = await generateProfessorId('General')
         const usernameParts = parseUsernameTokens(user.username)
         const firstName = usernameParts[0] ?? user.username
         const lastName = usernameParts.length > 1 ? usernameParts.slice(1).join(' ') : user.username

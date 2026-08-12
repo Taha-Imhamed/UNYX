@@ -199,7 +199,7 @@ export default function DashboardPage() {
         <div className="mt-5 flex items-center justify-end gap-3 px-6">
           <Link href="/dashboard/requests" className="inline-flex">
             <Button variant="outline" className="h-10">
-              Submit Purchase / Fund Request
+              Review Staff Requests
             </Button>
           </Link>
           <Link href="/dashboard/report" className="inline-flex">

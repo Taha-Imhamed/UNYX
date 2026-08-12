@@ -50,7 +50,7 @@ export function StatsCard({
             <Icon className="h-3.5 w-3.5" />
           </div>
         </div>
-        <div className="mt-5 h-px w-[calc(100%+2rem)] -translate-x-4 bg-[#253b6e]" />
+        <div className="mt-5 h-px w-[calc(100%+2rem)] -translate-x-4 bg-[#E2E8F0]" />
         <div className="mt-auto flex min-h-[3.25rem] items-end pt-4">
           {change && (
             <p

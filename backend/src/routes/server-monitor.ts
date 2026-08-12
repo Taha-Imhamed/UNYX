@@ -2,6 +2,7 @@ import { Router } from 'express'
 import os from 'node:os'
 import { runDbQuery } from '../db/postgres.js'
 import { liveLog } from '../lib/request-log.js'
+import { logBroadcast } from '../lib/log-broadcast.js'
 
 export const serverMonitorRoutes: ReturnType<typeof Router> = Router()
 
@@ -176,6 +177,48 @@ serverMonitorRoutes.get('/stream', (req, res) => {
   req.on('close', () => {
     clearInterval(heartbeat)
     liveLog.off('event', listener)
+    res.end()
+  })
+})
+
+// Raw backend console output (every logger.* call, formatted like the pino-pretty text
+// shown in the VS Code terminal) — distinct from /logs above, which is the parsed
+// per-request traffic table. See lib/log-broadcast.ts for how these lines get captured.
+serverMonitorRoutes.get('/console-logs', async (req, res) => {
+  if (!isSuperAdmin(req.auth?.role)) {
+    return res.status(403).json({ success: false, error: 'Super admin access required' })
+  }
+  const limit = Math.min(1000, Number(req.query.limit) || 300)
+  res.json({ success: true, data: logBroadcast.recent(limit) })
+})
+
+serverMonitorRoutes.get('/console-stream', (req, res) => {
+  if (!isSuperAdmin(req.auth?.role)) {
+    return res.status(403).json({ success: false, error: 'Super admin access required' })
+  }
+
+  res.set({
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+  })
+  res.flushHeaders?.()
+
+  const send = (event: unknown) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`)
+  }
+
+  send({ type: 'connected' })
+  const listener = (line: unknown) => send(line)
+  logBroadcast.on('line', listener)
+
+  const heartbeat = setInterval(() => {
+    res.write(': heartbeat\n\n')
+  }, 25000)
+
+  req.on('close', () => {
+    clearInterval(heartbeat)
+    logBroadcast.off('line', listener)
     res.end()
   })
 })

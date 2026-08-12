@@ -5,6 +5,7 @@ export interface TerminalModuleDef {
 }
 
 export const TERMINAL_MODULES: TerminalModuleDef[] = [
+  { key: 'dashboard', label: 'Dashboard', features: [] },
   { key: 'students', label: 'Students', features: [] },
   {
     key: 'enrollment',
@@ -15,6 +16,9 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: 'utilization', label: 'Seat Utilization' },
     ],
   },
+  { key: 'advising', label: 'Advising', features: [] },
+  { key: 'classes', label: 'Classes', features: [] },
+  { key: 'campuses', label: 'Campuses', features: [] },
   { key: 'professors', label: 'Professors', features: [] },
   {
     key: 'finance',
@@ -56,6 +60,13 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: 'availability-calendar', label: 'Facility Availability Calendar' },
     ],
   },
+  { key: 'security-records', label: 'Security Records', features: [] },
+  { key: 'facilities-records', label: 'Facilities Records', features: [] },
+  { key: 'research-records', label: 'Research Records', features: [] },
+  { key: 'device-logs', label: 'Device Logs', features: [] },
+  { key: 'hr-records', label: 'HR Records', features: [] },
+  { key: 'library-records', label: 'Library Records', features: [] },
+  { key: 'campus-life', label: 'Campus Life', features: [] },
   {
     key: 'research-office',
     label: 'Research Office',
@@ -133,6 +144,12 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: 'bulk-deactivation', label: 'Bulk Deactivation/Reactivation' },
     ],
   },
+  { key: 'tickets', label: 'Tickets', features: [] },
+  { key: 'terminal', label: 'Terminal', features: [] },
+  { key: 'last-features', label: 'Last Features', features: [] },
+  { key: 'server', label: 'Server', features: [] },
+  { key: 'iot-connectors', label: 'IoT Connectors', features: [] },
+  { key: 'requests', label: 'Requests', features: [] },
   { key: 'settings', label: 'Settings', features: [] },
   {
     key: 'student-portal',

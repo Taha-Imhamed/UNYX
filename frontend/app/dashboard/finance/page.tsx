@@ -657,39 +657,39 @@ export default function FinancePage() {
 
         <div className="grid gap-5 md:grid-cols-4">
           <Card className="border-[#dce7f7] bg-[#fbfdff]">
-            <CardContent className="flex items-center justify-between p-5">
+            <CardContent className="flex items-center justify-between p-6">
               <div>
-                <p className="text-sm text-muted-foreground">Revenue</p>
-                <p className="text-2xl font-semibold text-foreground">{currencyFormatter.format(financeSummary?.totalRevenue ?? 0)}</p>
+                <p className="text-sm font-medium text-muted-foreground">Revenue</p>
+                <p className="text-[2.4rem] font-semibold leading-tight tracking-[-0.02em] text-foreground">{currencyFormatter.format(financeSummary?.totalRevenue ?? 0)}</p>
               </div>
-              <Receipt className="h-8 w-8 text-[#6d95c9]" />
+              <Receipt className="h-10 w-10 text-[#6d95c9]" />
             </CardContent>
           </Card>
           <Card className="border-[#dce7f7] bg-[#fbfdff]">
-            <CardContent className="flex items-center justify-between p-5">
+            <CardContent className="flex items-center justify-between p-6">
               <div>
-                <p className="text-sm text-muted-foreground">Pending balances</p>
-                <p className="text-2xl font-semibold text-destructive">{currencyFormatter.format(financeSummary?.totalPendingBalances ?? 0)}</p>
+                <p className="text-sm font-medium text-muted-foreground">Pending balances</p>
+                <p className="text-[2.4rem] font-semibold leading-tight tracking-[-0.02em] text-destructive">{currencyFormatter.format(financeSummary?.totalPendingBalances ?? 0)}</p>
               </div>
-              <Wallet className="h-8 w-8 text-[#ef8d86]" />
+              <Wallet className="h-10 w-10 text-[#ef8d86]" />
             </CardContent>
           </Card>
           <Card className="border-[#dce7f7] bg-[#fbfdff]">
-            <CardContent className="flex items-center justify-between p-5">
+            <CardContent className="flex items-center justify-between p-6">
               <div>
-                <p className="text-sm text-muted-foreground">Open invoices</p>
-                <p className="text-2xl font-semibold text-foreground">{financeSummary?.openInvoiceCount ?? 0}</p>
+                <p className="text-sm font-medium text-muted-foreground">Open invoices</p>
+                <p className="text-[2.4rem] font-semibold leading-tight tracking-[-0.02em] text-foreground">{financeSummary?.openInvoiceCount ?? 0}</p>
               </div>
-              <FileText className="h-8 w-8 text-[#6d95c9]" />
+              <FileText className="h-10 w-10 text-[#6d95c9]" />
             </CardContent>
           </Card>
           <Card className="border-[#dce7f7] bg-[#fbfdff]">
-            <CardContent className="flex items-center justify-between p-5">
+            <CardContent className="flex items-center justify-between p-6">
               <div>
-                <p className="text-sm text-muted-foreground">Pending requests</p>
-                <p className="text-2xl font-semibold text-foreground">{pendingRequestCount}</p>
+                <p className="text-sm font-medium text-muted-foreground">Pending requests</p>
+                <p className="text-[2.4rem] font-semibold leading-tight tracking-[-0.02em] text-foreground">{pendingRequestCount}</p>
               </div>
-              <WalletCards className="h-8 w-8 text-[#6d95c9]" />
+              <WalletCards className="h-10 w-10 text-[#6d95c9]" />
             </CardContent>
           </Card>
         </div>

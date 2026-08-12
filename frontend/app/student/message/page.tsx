@@ -8,8 +8,17 @@ import { Spinner } from "@/components/ui/spinner"
 import { useAuth } from "@/lib/auth-context"
 import { fetchNotifications, markAllNotificationsRead, markNotificationRead } from "@/lib/notifications-api"
 import type { UserNotification } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 export default function StudentMessagePage() {
+  return (
+    <StudentFeatureGate featureKey="message">
+      <StudentMessagePageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function StudentMessagePageInner() {
   const { user } = useAuth()
   const [items, setItems] = useState<UserNotification[]>([])
   const [isLoading, setIsLoading] = useState(true)

@@ -22,10 +22,12 @@ import type {
   CourseScheduleEntry,
   CourseType,
   Permission,
+  Semester,
 } from '../../../shared/types/index.js'
 import { requireAdmin } from '../middleware/auth.js'
 import { getCollection, runDbQuery, runInTransaction } from '../db/postgres.js'
 import { syncBaseCoursesForFirstYearStudentsByMajor } from '../lib/base-course-assignment.js'
+import { listAllSemesters, invalidateSemesterCache, deriveStudentYearLevel } from '../lib/academic-terms.js'
 import {
   appendFinancialLedgerEntry,
   checkBalance,
@@ -162,7 +164,7 @@ function overlaps(startA: number, endA: number, startB: number, endB: number) {
   return startA < endB && startB < endA
 }
 
-function isTimeOverlapping(left: CourseScheduleEntry, right: CourseScheduleEntry, bufferMinutes: number) {
+export function isTimeOverlapping(left: CourseScheduleEntry, right: CourseScheduleEntry, bufferMinutes: number) {
   if (left.day !== right.day) return null
   const leftStart = timeToMinutes(left.startTime)
   const leftEnd = timeToMinutes(left.endTime)
@@ -224,6 +226,7 @@ async function hasStudentScheduleConflict(studentId: string, course: Course) {
   if (!course.schedule?.length) return null
   const enrollmentsCol = await enrollmentsCollection()
   const coursesCol = await coursesCollection()
+  const targetSemesterId = course.semesterId ?? null
   const targetSemester = course.startDate?.slice(0, 7) ?? null
 
   const existingEnrollments = await enrollmentsCol.find({
@@ -245,8 +248,13 @@ async function hasStudentScheduleConflict(studentId: string, course: Course) {
   for (const enrollment of existingEnrollments) {
     const existingCourse = courseById.get(enrollment.courseId)
     if (!existingCourse) continue
-    const enrollmentSemester = enrollment.semester ?? existingCourse.startDate?.slice(0, 7) ?? null
-    if (targetSemester && enrollmentSemester && enrollmentSemester !== targetSemester) continue
+    const enrollmentSemesterId = enrollment.semesterId ?? existingCourse.semesterId ?? null
+    if (targetSemesterId && enrollmentSemesterId) {
+      if (enrollmentSemesterId !== targetSemesterId) continue
+    } else {
+      const enrollmentSemester = enrollment.semester ?? existingCourse.startDate?.slice(0, 7) ?? null
+      if (targetSemester && enrollmentSemester && enrollmentSemester !== targetSemester) continue
+    }
     const existingCampus = getCourseCampus(existingCourse)
     const bufferMinutes = targetCampus === existingCampus ? 10 : 20
 
@@ -278,7 +286,7 @@ function isUniqueViolation(error: unknown) {
   return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505'
 }
 
-function normalizeEligibilityList(values: unknown): string[] | undefined {
+export function normalizeEligibilityList(values: unknown): string[] | undefined {
   if (!Array.isArray(values)) return undefined
   const normalized = values
     .map((value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''))
@@ -411,6 +419,7 @@ async function readLockedCourse(client: PoolClient, courseId: string) {
     eligiblePrograms: string[] | null
     eligibleFaculties: string[] | null
     eligibleSemesters: string[] | null
+    semesterId: string | null
     prerequisiteCourseIds: string[] | null
     creditHours: number | string | null
     courseType: CourseType | null
@@ -441,6 +450,7 @@ async function readLockedCourse(client: PoolClient, courseId: string) {
         eligible_programs as "eligiblePrograms",
         eligible_faculties as "eligibleFaculties",
         eligible_semesters as "eligibleSemesters",
+        semester_id as "semesterId",
         prerequisite_course_ids as "prerequisiteCourseIds",
         credit_hours as "creditHours",
         course_type as "courseType",
@@ -583,6 +593,7 @@ async function insertEnrollmentRow(client: PoolClient, enrollment: Enrollment) {
         grades_finalized_at,
         grades_finalized_by,
         semester,
+        semester_id,
         tuition_charged,
         charged_at,
         payment_verified,
@@ -610,8 +621,8 @@ async function insertEnrollmentRow(client: PoolClient, enrollment: Enrollment) {
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
         $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
-        $41, $42, $43, $44, $45, $46, $47, $48::jsonb, $49, $50,
-        $51::jsonb, $52
+        $41, $42, $43, $44, $45, $46, $47, $48, $49::jsonb, $50,
+        $51, $52::jsonb, $53
       )
     `,
     [
@@ -645,6 +656,7 @@ async function insertEnrollmentRow(client: PoolClient, enrollment: Enrollment) {
       enrollment.gradesFinalizedAt ?? null,
       enrollment.gradesFinalizedBy ?? null,
       enrollment.semester ?? null,
+      enrollment.semesterId ?? null,
       enrollment.tuitionCharged ?? false,
       enrollment.chargedAt ?? null,
       enrollment.paymentVerified ?? false,
@@ -701,6 +713,7 @@ async function createEnrollmentWithCapacityLock(options: {
       endDate: options.course.endDate ?? lockedCourse.endDate,
     }
     const semester = getCourseSemester(effectiveCourse)
+    const semesterId = effectiveCourse.semesterId ?? null
 
     const { rows: duplicateRows } = await client.query<{ id: string }>(
       `
@@ -708,11 +721,14 @@ async function createEnrollmentWithCapacityLock(options: {
         from public.enrollments
         where student_id = $1
           and course_id = $2
-          and semester = $3
+          and (
+            ($3::text is not null and semester_id = $3)
+            or ($3::text is null and semester = $4)
+          )
           and status not in ('cancelled', 'rejected', 'dropped')
         limit 1
       `,
-      [lockedStudent.id, effectiveCourse.id, semester],
+      [lockedStudent.id, effectiveCourse.id, semesterId, semester],
     )
     if (duplicateRows.length > 0) {
       const error = new Error('Enrollment already exists for this student and course') as Error & { code?: string }
@@ -776,6 +792,7 @@ async function createEnrollmentWithCapacityLock(options: {
       gradesFinalizedAt: null,
       gradesFinalizedBy: null,
       semester,
+      semesterId: effectiveCourse.semesterId ?? null,
       tuitionCharged: false,
       chargedAt: null,
       paymentVerified: statusValue === 'waitlisted' ? false : paymentStatus === 'paid',
@@ -1073,15 +1090,7 @@ function doesCourseMatchMajor(course: Course, student: Student | null | undefine
     normalizeIdLike(matchedMajor?.departmentId),
     normalizeIdLike(matchedDepartment?.name),
   ].filter(Boolean))
-  const currentYear = (() => {
-    const directYear = Number(student?.currentYear)
-    if (Number.isFinite(directYear) && directYear > 0) return Math.floor(directYear)
-    const semester = typeof student?.currentSemester === 'string' ? student.currentSemester.trim() : ''
-    const match = semester.match(/^(?:year\s*)?(\d+)$/i)
-    if (!match) return null
-    const parsed = Number(match[1])
-    return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null
-  })()
+  const currentYear = student ? deriveStudentYearLevel(student) ?? null : null
   const semesterTokens = new Set([
     normalizeIdLike(student?.currentSemester),
     currentYear ? normalizeIdLike(String(currentYear)) : '',
@@ -1163,7 +1172,7 @@ function getEnrollmentPaymentStatus(student: Student | null | undefined): Enroll
   return isPaymentCleared(student) ? 'paid' : 'payment_required'
 }
 
-function normalizeCourseType(value: unknown): CourseType {
+export function normalizeCourseType(value: unknown): CourseType {
   return value === 'common' ? 'common' : 'major'
 }
 
@@ -1511,7 +1520,7 @@ enrollmentRoutes.get('/meta/courses', async (req, res) => {
       authStudentId &&
       (await studentsCol.findOne(
         { id: authStudentId },
-        { projection: { program: 1, programId: 1, major: 1, faculty: 1, facultyId: 1, currentSemester: 1, currentYear: 1 } },
+        { projection: { program: 1, programId: 1, major: 1, faculty: 1, facultyId: 1, currentSemester: 1, currentYear: 1, yearLevel: 1 } },
       )) as any
     const normalize = (value?: string): string | undefined => (value?.trim().length ? value.trim().toLowerCase() : undefined)
     const programIdentifiers = Array.from(
@@ -1520,13 +1529,13 @@ enrollmentRoutes.get('/meta/courses', async (req, res) => {
     const facultyIdentifiers = Array.from(
       new Set([normalize(student?.facultyId), normalize(student?.faculty)].filter(Boolean) as string[]),
     )
-    const currentYear = Number(student?.currentYear)
+    const currentYear = student ? deriveStudentYearLevel(student) : undefined
     const semesterIdentifiers = Array.from(
       new Set(
         [
           normalize(student?.currentSemester),
-          Number.isFinite(currentYear) && currentYear > 0 ? `year ${Math.floor(currentYear)}` : undefined,
-          Number.isFinite(currentYear) && currentYear > 0 ? String(Math.floor(currentYear)) : undefined,
+          currentYear ? `year ${currentYear}` : undefined,
+          currentYear ? String(currentYear) : undefined,
         ].filter(Boolean) as string[],
       ),
     )
@@ -1626,6 +1635,7 @@ enrollmentRoutes.get('/meta/courses', async (req, res) => {
         enrolledCount,
         availableSeats,
         semester: course.startDate?.slice(0, 7) ?? null,
+        semesterId: course.semesterId ?? null,
         deadline: course.startDate,
       }
     })
@@ -1751,7 +1761,7 @@ enrollmentRoutes.post('/meta/courses/bulk-import', requireAdmin, async (req, res
 
 enrollmentRoutes.post('/meta/courses', requireAdmin, async (req, res) => {
   try {
-    const { title, code, professorId, capacity, startDate, endDate, price, enrollmentOpen, enrollmentOpensAt, enrollmentClosesAt, enrollmentOpenAt, enrollmentCloseAt, department, branch, schedule, sectionId, location, enrollmentStatusNote, eligiblePrograms, eligibleFaculties, eligibleSemesters, prerequisiteCourseIds, creditHours, courseType } = req.body ?? {}
+    const { title, code, professorId, capacity, startDate, endDate, price, enrollmentOpen, enrollmentOpensAt, enrollmentClosesAt, enrollmentOpenAt, enrollmentCloseAt, department, branch, schedule, sectionId, location, enrollmentStatusNote, eligiblePrograms, eligibleFaculties, eligibleSemesters, semesterId, prerequisiteCourseIds, creditHours, courseType } = req.body ?? {}
     const normalizedTitle = typeof title === 'string' ? title.trim() : ''
     if (!normalizedTitle) {
       return res.status(400).json({ success: false, error: 'title is required' })
@@ -1804,6 +1814,7 @@ enrollmentRoutes.post('/meta/courses', requireAdmin, async (req, res) => {
       eligiblePrograms: normalizedEligiblePrograms,
       eligibleFaculties: normalizedEligibleFaculties,
       eligibleSemesters: normalizedEligibleSemesters,
+      semesterId: typeof semesterId === 'string' && semesterId.trim() ? semesterId.trim() : null,
       prerequisiteCourseIds: normalizedPrerequisiteCourseIds,
       creditHours: normalizedCreditHours,
       courseType: normalizeCourseType(courseType),
@@ -1933,6 +1944,10 @@ enrollmentRoutes.put('/meta/courses/:id', requireAdmin, async (req, res) => {
     const eligibleSemestersUpdate = normalizeEligibilityList(req.body?.eligibleSemesters)
     if (eligibleSemestersUpdate !== undefined) {
       updates.eligibleSemesters = eligibleSemestersUpdate
+    }
+    if (req.body?.semesterId !== undefined) {
+      const semesterIdValue = req.body.semesterId
+      updates.semesterId = typeof semesterIdValue === 'string' && semesterIdValue.trim() ? semesterIdValue.trim() : null
     }
     const prerequisiteCourseIdsUpdate = normalizeIdList(req.body?.prerequisiteCourseIds)
     if (prerequisiteCourseIdsUpdate !== undefined) {
@@ -2805,7 +2820,7 @@ enrollmentRoutes.post('/self', async (req, res) => {
     const existing = await enrollmentsCol.findOne({
       courseId: course.id,
       studentId: student.id,
-      semester: getCourseSemester(course),
+      ...(course.semesterId ? { semesterId: course.semesterId } : { semester: getCourseSemester(course) }),
       status: { $nin: ['cancelled', 'rejected', 'dropped'] },
     })
     if (existing) {
@@ -3534,7 +3549,7 @@ enrollmentRoutes.post('/', async (req, res) => {
     const existingEnrollment = await enrollmentsCol.findOne({
       studentId: student.id,
       courseId: course.id,
-      semester: getCourseSemester(course),
+      ...(course.semesterId ? { semesterId: course.semesterId } : { semester: getCourseSemester(course) }),
       status: { $nin: ['cancelled', 'rejected', 'dropped'] },
     })
     if (existingEnrollment) {
@@ -3810,6 +3825,46 @@ enrollmentRoutes.get('/:id', async (req, res) => {
   }
 })
 
+enrollmentRoutes.get('/:id/waitlist-position', async (req, res) => {
+  try {
+    const tokenStudentId = req.auth?.studentId || req.auth?.userId
+    const enrollmentsCol = await enrollmentsCollection()
+    const enrollment = await enrollmentsCol.findOne({ id: req.params.id })
+    if (!enrollment) {
+      return res.status(404).json({ success: false, error: 'Enrollment not found' })
+    }
+
+    if (req.auth?.role === 'student') {
+      if (!tokenStudentId) {
+        return res.status(403).json({ success: false, error: 'Student identity missing in token' })
+      }
+      if (enrollment.studentId !== tokenStudentId) {
+        return res.status(403).json({ success: false, error: 'Students can only view their own enrollments' })
+      }
+    }
+
+    if (enrollment.status !== 'waitlisted') {
+      return res.json({ success: true, data: { position: null, totalWaitlisted: 0 } })
+    }
+
+    const queue = await enrollmentsCol
+      .find({ courseId: enrollment.courseId, status: 'waitlisted' })
+      .sort({ createdAt: 1 })
+      .toArray()
+    const position = queue.findIndex((item) => item.id === enrollment.id)
+
+    res.json({
+      success: true,
+      data: {
+        position: position >= 0 ? position + 1 : null,
+        totalWaitlisted: queue.length,
+      },
+    })
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch waitlist position' })
+  }
+})
+
 enrollmentRoutes.put('/:id', requireAdmin, async (req, res) => {
   try {
     const enrollmentsCol = await enrollmentsCollection()
@@ -3958,6 +4013,7 @@ enrollmentRoutes.put('/:id', requireAdmin, async (req, res) => {
       discountAmount: couponResult.discountAmount,
       updatedAt: new Date().toISOString(),
       semester: targetCourse.startDate?.slice(0, 7) ?? existing.semester ?? null,
+      semesterId: targetCourse.semesterId ?? existing.semesterId ?? null,
       tuitionCharged: wasCharged || willChargeNow,
       chargedAt: wasCharged ? existing.chargedAt ?? null : willChargeNow ? new Date().toISOString() : existing.chargedAt ?? null,
       gradeMidterm: midtermScore,
@@ -4114,5 +4170,97 @@ enrollmentRoutes.delete('/:id', requireAdmin, async (req, res) => {
     res.json({ success: true, data: responsePayload })
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to delete enrollment' })
+  }
+})
+
+const semesterSchema = z.object({
+  label: z.string().trim().min(1),
+  academicYear: z.string().trim().min(1),
+  startDate: z.string().trim().min(1),
+  endDate: z.string().trim().min(1),
+  status: z.enum(['upcoming', 'active', 'closed']).optional(),
+})
+
+async function semestersCollection() {
+  return getCollection<Semester>('semesters')
+}
+
+enrollmentRoutes.get('/meta/semesters', async (req, res) => {
+  try {
+    const semesters = await listAllSemesters()
+    res.json({ success: true, data: semesters })
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch semesters' })
+  }
+})
+
+enrollmentRoutes.post('/meta/semesters', requireAdmin, async (req, res) => {
+  try {
+    const parsed = semesterSchema.safeParse(req.body ?? {})
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid semester payload' })
+    }
+    const now = new Date().toISOString()
+    const id = `SEM-${randomUUID().slice(0, 8).toUpperCase()}`
+    const semester: Semester = {
+      id,
+      label: parsed.data.label,
+      academicYear: parsed.data.academicYear,
+      startDate: parsed.data.startDate,
+      endDate: parsed.data.endDate,
+      status: parsed.data.status ?? 'upcoming',
+      createdAt: now,
+      updatedAt: now,
+    }
+    const collection = await semestersCollection()
+    await collection.insertOne(semester)
+    invalidateSemesterCache()
+    await writeAuditLog({ action: 'semester_created', entityType: 'semester', entityId: id, details: { label: semester.label }, auth: req.auth })
+    res.status(201).json({ success: true, data: semester })
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to create semester' })
+  }
+})
+
+enrollmentRoutes.put('/meta/semesters/:id', requireAdmin, async (req, res) => {
+  try {
+    const collection = await semestersCollection()
+    const existing = await collection.findOne({ id: req.params.id })
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Semester not found' })
+    }
+    const parsed = semesterSchema.partial().safeParse(req.body ?? {})
+    if (!parsed.success) {
+      return res.status(400).json({ success: false, error: parsed.error.issues[0]?.message ?? 'Invalid semester payload' })
+    }
+    const updates: Partial<Semester> = { ...parsed.data, updatedAt: new Date().toISOString() }
+    await collection.updateOne({ id: existing.id }, { $set: updates })
+    invalidateSemesterCache()
+    const updated = await collection.findOne({ id: existing.id })
+    await writeAuditLog({ action: 'semester_updated', entityType: 'semester', entityId: existing.id, details: { updatedFields: Object.keys(updates) }, auth: req.auth })
+    res.json({ success: true, data: updated ?? { ...existing, ...updates } })
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to update semester' })
+  }
+})
+
+enrollmentRoutes.delete('/meta/semesters/:id', requireAdmin, async (req, res) => {
+  try {
+    const collection = await semestersCollection()
+    const existing = await collection.findOne({ id: req.params.id })
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Semester not found' })
+    }
+    const coursesCol = await coursesCollection()
+    const inUse = await coursesCol.find({ semesterId: existing.id }).limit(1).toArray()
+    if (inUse.length > 0) {
+      return res.status(409).json({ success: false, error: 'Cannot delete a semester that has courses assigned to it' })
+    }
+    await collection.deleteOne({ id: existing.id })
+    invalidateSemesterCache()
+    await writeAuditLog({ action: 'semester_deleted', entityType: 'semester', entityId: existing.id, details: { label: existing.label }, auth: req.auth })
+    res.json({ success: true, data: { id: existing.id } })
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to delete semester' })
   }
 })

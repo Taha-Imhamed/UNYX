@@ -29,6 +29,7 @@ import {
   Menu,
   Receipt,
   School,
+  Settings,
   ShieldCheck,
   Star,
   Trophy,
@@ -52,6 +53,7 @@ const navSections: { title: string; items: NavItem[] }[] = [
     items: [
       { label: "Supervisor Information", href: "/student/supervisor", icon: ShieldCheck, featureKey: ["student-portal", "advisor-contact"] },
       { label: "Student Information", href: "/student/profile", icon: User2 },
+      { label: "Settings", href: "/student/settings", icon: Settings },
       { label: "Transcript", href: "/student/transcript", icon: FileBadge2, featureKey: ["student-portal", "transcript-view"] },
     ],
   },
@@ -69,31 +71,35 @@ const navSections: { title: string; items: NavItem[] }[] = [
       { label: "Department Courses", href: "/student/department-courses", icon: GraduationCap, featureKey: ["student-portal", "course-catalog"] },
       { label: "Degree Audit", href: "/student/degree-audit", icon: ClipboardCheck, featureKey: ["student-portal", "degree-audit"] },
       { label: "GPA Calculator", href: "/student/gpa-calculator", icon: BarChart3, featureKey: ["student-portal", "gpa-calculator"] },
-      { label: "Course Reviews", href: "/student/course-reviews", icon: Star },
+      { label: "Course Reviews", href: "/student/course-reviews", icon: Star, featureKey: ["student-portal", "course-reviews"] },
     ],
   },
   {
     title: "Enrollment",
     items: [
-      { label: "Enrollment Renewal", href: "/student/enrollment-renewal", icon: GraduationCap },
+      { label: "Enrollment Renewal", href: "/student/enrollment-renewal", icon: GraduationCap, featureKey: ["student-portal", "enrollment-renewal"] },
       { label: "Payment Plan", href: "/student/payment-plan", icon: Receipt, featureKey: ["student-portal", "payment-plan"] },
     ],
   },
   {
     title: "Campus Life",
     items: [
-      { label: "Campus Events", href: "/student/campus-events", icon: CalendarDays },
-      { label: "Housing & Meal Plan", href: "/student/housing", icon: Building2 },
-      { label: "Academic Advising", href: "/student/advising", icon: CalendarClock },
+      { label: "Campus Events", href: "/student/campus-events", icon: CalendarDays, featureKey: ["student-portal", "campus-events"] },
+      { label: "Housing & Meal Plan", href: "/student/housing", icon: Building2, featureKey: ["student-portal", "housing"] },
+      { label: "Academic Advising", href: "/student/advising", icon: CalendarClock, featureKey: ["student-portal", "advisor-contact"] },
     ],
   },
   {
     title: "Petition",
-    items: [{ label: "Document Request", href: "/student/document-request", icon: FileText, featureKey: ["student-portal", "document-request"] }],
+    items: [
+      { label: "Document Request", href: "/student/document-request", icon: FileText, featureKey: ["student-portal", "document-request"] },
+      { label: "Support", href: "/student/support", icon: LifeBuoy, featureKey: ["student-portal", "support"] },
+      { label: "Tickets", href: "/student/tickets", icon: LifeBuoy, featureKey: ["student-portal", "tickets"] },
+    ],
   },
   {
     title: "Message",
-    items: [{ label: "Message", href: "/student/message", icon: LifeBuoy }],
+    items: [{ label: "Message", href: "/student/message", icon: LifeBuoy, featureKey: ["student-portal", "message"] }],
   },
 ]
 

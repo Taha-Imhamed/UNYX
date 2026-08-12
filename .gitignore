@@ -12,6 +12,12 @@ backend/dist
 frontend/.next
 frontend/out
 
+# test output
+coverage/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+
 # logs
 *.log
 *.err

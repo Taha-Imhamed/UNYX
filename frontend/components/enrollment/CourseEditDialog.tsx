@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { BookOpen, Check, X } from "lucide-react"
 import { pillButtonStyles } from "@/components/enrollment/shared"
 import type { AcademicCampus, AcademicDepartment, AcademicMajor } from "@/lib/enrollment-api"
-import type { Course, Professor } from "@shared/types"
+import type { Course, Professor, Semester } from "@shared/types"
 
 export interface CourseFormState {
   title: string
@@ -42,6 +42,7 @@ export interface CourseFormState {
   eligibleYears: string[]
   eligiblePrograms: string[]
   prerequisiteCourseIds: string[]
+  semesterId: string
 }
 
 export const emptyCourseForm: CourseFormState = {
@@ -64,6 +65,7 @@ export const emptyCourseForm: CourseFormState = {
   eligibleYears: [],
   eligiblePrograms: [],
   prerequisiteCourseIds: [],
+  semesterId: "",
 }
 
 interface CourseEditDialogProps {
@@ -80,6 +82,7 @@ interface CourseEditDialogProps {
   departments: AcademicDepartment[]
   campuses: AcademicCampus[]
   majors: AcademicMajor[]
+  semesters?: Semester[]
   courseSaving: boolean
   courseError: string | null
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
@@ -100,6 +103,7 @@ export function CourseEditDialog({
   departments,
   campuses,
   majors,
+  semesters = [],
   courseSaving,
   courseError,
   onSubmit,
@@ -374,6 +378,26 @@ export function CourseEditDialog({
                   )
                 })}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="courseSemester" className="text-sm font-medium text-slate-700">Semester / term</Label>
+              <p className="text-xs text-slate-500">Links this course to a real academic term, used for enrollment grouping and duplicate-enrollment checks.</p>
+              <Select
+                value={courseForm.semesterId || "none"}
+                onValueChange={(value) => setCourseForm((prev) => ({ ...prev, semesterId: value === "none" ? "" : value }))}
+              >
+                <SelectTrigger id="courseSemester" className="h-12 w-full rounded-xl border-slate-200 bg-white text-slate-800">
+                  <SelectValue placeholder="No term assigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No term assigned</SelectItem>
+                  {semesters.map((semester) => (
+                    <SelectItem key={semester.id} value={semester.id}>
+                      {semester.label} ({semester.academicYear})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-3">
               <div>

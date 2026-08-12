@@ -13,10 +13,12 @@ import { assignBaseCoursesToFirstYearStudent } from '../lib/base-course-assignme
 import { appendFinancialLedgerEntry, ensureAcademicComplianceStorage } from '../lib/academic-compliance.js'
 import { buildStudentTranscript, buildStudentTranscriptPdf, streamStudentTranscriptCsv } from '../lib/transcripts.js'
 import { readPagination, UNPAGINATED_SAFETY_CAP } from '../lib/pagination.js'
+import { deriveStudentYearLevel, formatYearLevelLabel } from '../lib/academic-terms.js'
+import { generateStudentId } from '../lib/id-generator.js'
 
 export const studentRoutes: ReturnType<typeof Router> = Router()
 
-const createStudentCoreSchema = z.object({
+export const createStudentCoreSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
   email: z.string().trim().email(),
@@ -62,10 +64,6 @@ function assertStudentOwnership(req: Request, res: Response, studentId: string) 
     return false
   }
   return true
-}
-
-function buildStudentId() {
-  return `STU-${randomUUID().slice(0, 8).toUpperCase()}`
 }
 
 function buildTransactionId(prefix: string) {
@@ -134,37 +132,22 @@ function normalizeRowKeys<T extends Record<string, unknown>>(row: T) {
   return Object.fromEntries(Object.entries(row).map(([key, value]) => [toCamelCaseKey(key), value]))
 }
 
-function deriveCurrentYear(student: Partial<Student> & Record<string, unknown>) {
-  const directYear = Number(student.currentYear)
-  if (Number.isFinite(directYear) && directYear > 0) {
-    return Math.floor(directYear)
-  }
-
-  const semester = typeof student.currentSemester === 'string' ? student.currentSemester.trim() : ''
-  if (!semester) return undefined
-
-  const match = semester.match(/^(?:year\s*)?(\d+)$/i)
-  if (!match) return undefined
-
-  const derivedYear = Number(match[1])
-  return Number.isFinite(derivedYear) && derivedYear > 0 ? Math.floor(derivedYear) : undefined
-}
-
 function formatCurrentSemesterFromYear(value: unknown) {
   const parsed = Number(value)
   if (!Number.isFinite(parsed) || parsed < 1) return undefined
-  return `Year ${Math.floor(parsed)}`
+  return formatYearLevelLabel(Math.floor(parsed))
 }
 
 function serializeStudent(student: Student | (Partial<Student> & Record<string, unknown>)) {
-  const currentYear = deriveCurrentYear(student)
+  const yearLevel = deriveStudentYearLevel(student)
   return {
     ...student,
     currentSemester:
       normalizeCurrentSemester(student.currentSemester) ??
-      (currentYear ? `Year ${currentYear}` : undefined),
-    currentYear: currentYear ?? null,
-  } as Student & { currentYear: number | null; currentSemester?: string }
+      (yearLevel ? formatYearLevelLabel(yearLevel) : undefined),
+    currentYear: yearLevel ?? null,
+    yearLevel: yearLevel ?? null,
+  } as Student & { currentYear: number | null; yearLevel: number | null; currentSemester?: string }
 }
 
 async function findOrCreateStudentRecord(studentId: string, auth?: Request['auth']): Promise<Student> {
@@ -175,7 +158,7 @@ async function findOrCreateStudentRecord(studentId: string, auth?: Request['auth
   const usersCol = await getCollection<any>('users')
   const userDoc = auth?.userId ? await usersCol.findOne({ id: auth.userId }) : null
   const now = new Date().toISOString()
-  const generatedId = studentId || buildStudentId()
+  const generatedId = studentId || (await generateStudentId(null))
   const newStudent: Student = {
     id: generatedId,
     displayId: generatedId,
@@ -280,6 +263,19 @@ studentRoutes.put('/self', async (req, res) => {
     })
     applyOptionalStudentFields(updates as Partial<Student> & Record<string, unknown>, req.body ?? {})
 
+    if (req.body.notificationPreferences && typeof req.body.notificationPreferences === 'object') {
+      const allowedChannels = ['email', 'sms', 'push'] as const
+      const incoming = req.body.notificationPreferences as Record<string, unknown>
+      const existing = (student as Partial<Student> & Record<string, unknown>).notificationPreferences as Record<string, boolean> | undefined
+      const merged: Record<string, boolean> = { ...existing }
+      allowedChannels.forEach((channel) => {
+        if (typeof incoming[channel] === 'boolean') {
+          merged[channel] = incoming[channel] as boolean
+        }
+      })
+      ;(updates as Partial<Student> & Record<string, unknown>).notificationPreferences = merged
+    }
+
     const currentSemester = normalizeCurrentSemester(req.body.currentSemester) ?? formatCurrentSemesterFromYear(req.body.currentYear)
     if (currentSemester) {
       (updates as Partial<Student> & Record<string, unknown>).currentSemester = currentSemester
@@ -311,6 +307,47 @@ studentRoutes.get('/:id', async (req, res) => {
   }
 })
 
+// Core creation logic shared by the POST / route handler and the AI assistant's
+// create_student tool (backend/src/lib/ai-tools.ts).
+export async function createStudentCore(
+  core: z.infer<typeof createStudentCoreSchema>,
+  extra: Record<string, unknown> = {},
+): Promise<Student> {
+  const { firstName, lastName, email, balance } = core
+  const { phone, photo, enrollmentDate, program, status, address, dateOfBirth, supervisorId, supervisorName, currentYear: currentYearRaw } = extra
+
+  const collection = await studentsCollection()
+  const departmentSource = [program, extra.major, extra.faculty].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  ) ?? null
+  const id = await generateStudentId(departmentSource)
+
+  const newStudent: Student = {
+    id,
+    displayId: id,
+    firstName: String(firstName),
+    lastName: String(lastName),
+    email: String(email),
+    phone: typeof phone === 'string' ? phone : '',
+    photo: typeof photo === 'string' ? photo : '/modern-university-campus-building-with-students-wa.jpg',
+    enrollmentDate: typeof enrollmentDate === 'string' && enrollmentDate ? enrollmentDate : new Date().toISOString(),
+    program: typeof program === 'string' ? program : '',
+    currentSemester: formatCurrentSemesterFromYear(currentYearRaw),
+    yearLevel: Number.isFinite(Number(currentYearRaw)) && Number(currentYearRaw) > 0 ? Math.floor(Number(currentYearRaw)) : null,
+    status: status === 'inactive' || status === 'graduated' ? status : 'active',
+    address: typeof address === 'string' ? address : '',
+    dateOfBirth: normalizeStudentDateOfBirth(dateOfBirth),
+    balance: Number.isFinite(balance) ? Number(balance) : 0,
+    supervisorId: typeof supervisorId === 'string' && supervisorId.trim() ? supervisorId.trim() : undefined,
+    supervisorName: typeof supervisorName === 'string' && supervisorName.trim() ? supervisorName.trim() : undefined,
+  }
+  applyOptionalStudentFields(newStudent as Partial<Student> & Record<string, unknown>, extra)
+
+  await collection.insertOne(newStudent)
+  await assignBaseCoursesToFirstYearStudent(newStudent)
+  return newStudent
+}
+
 studentRoutes.post('/', async (req, res) => {
   try {
     if (!isPrivileged(req.auth)) {
@@ -320,35 +357,8 @@ studentRoutes.post('/', async (req, res) => {
     if (!parsedCore.success) {
       return res.status(400).json({ success: false, error: parsedCore.error.issues[0]?.message ?? 'firstName, lastName, and a valid email are required' })
     }
-    const { firstName, lastName, email, balance } = parsedCore.data
-    const { phone, photo, enrollmentDate, program, status, address, dateOfBirth, supervisorId, supervisorName } = req.body ?? {}
-    const currentYearRaw = req.body?.currentYear
 
-    const collection = await studentsCollection()
-    const id = buildStudentId()
-
-    const newStudent: Student = {
-      id,
-      displayId: id,
-      firstName: String(firstName),
-      lastName: String(lastName),
-      email: String(email),
-      phone: typeof phone === 'string' ? phone : '',
-      photo: typeof photo === 'string' ? photo : '/modern-university-campus-building-with-students-wa.jpg',
-      enrollmentDate: typeof enrollmentDate === 'string' && enrollmentDate ? enrollmentDate : new Date().toISOString(),
-      program: typeof program === 'string' ? program : '',
-      currentSemester: formatCurrentSemesterFromYear(currentYearRaw),
-      status: status === 'inactive' || status === 'graduated' ? status : 'active',
-      address: typeof address === 'string' ? address : '',
-      dateOfBirth: normalizeStudentDateOfBirth(dateOfBirth),
-      balance: Number.isFinite(balance) ? Number(balance) : 0,
-      supervisorId: typeof supervisorId === 'string' && supervisorId.trim() ? supervisorId.trim() : undefined,
-      supervisorName: typeof supervisorName === 'string' && supervisorName.trim() ? supervisorName.trim() : undefined,
-    }
-    applyOptionalStudentFields(newStudent as Partial<Student> & Record<string, unknown>, req.body ?? {})
-
-    await collection.insertOne(newStudent)
-    await assignBaseCoursesToFirstYearStudent(newStudent)
+    const newStudent = await createStudentCore(parsedCore.data, req.body ?? {})
     res.status(201).json({ success: true, data: serializeStudent(newStudent), message: 'Student created' })
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to create student' })
@@ -386,6 +396,10 @@ studentRoutes.put('/:id', async (req, res) => {
           return res.status(400).json({ success: false, error: 'Current year must be a positive number' })
         }
         updates.currentSemester = currentSemester
+      }
+      if (req.body.currentYear !== undefined) {
+        const parsedYear = Number(req.body.currentYear)
+        updates.yearLevel = Number.isFinite(parsedYear) && parsedYear > 0 ? Math.floor(parsedYear) : null
       }
 
       if (privileged && req.body.supervisorId !== undefined) {

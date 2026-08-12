@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { coursesCollection, enrollmentsCollection, studentsCollection } from '../data/collections.js'
 import { getCollection, runDbQuery } from '../db/postgres.js'
 import type { Enrollment, EnrollmentStatus, Student, AcademicStructure, AcademicMajor } from '../../../shared/types/index.js'
+import { deriveStudentYearLevel } from './academic-terms.js'
 
 const capacityHoldingStatuses: EnrollmentStatus[] = ['pending', 'pendingSupervisorApproval', 'pendingAdvisorApproval', 'pending_approval', 'active']
 type AcademicStructureRecord = AcademicStructure & Record<string, unknown>
@@ -14,20 +15,6 @@ function buildEnrollmentId() {
 function normalizeIdLike(value: unknown) {
   if (typeof value !== 'string') return ''
   return value.trim().toLowerCase()
-}
-
-function deriveCurrentYear(student: Partial<Student> & Record<string, unknown>) {
-  const directYear = Number(student.currentYear)
-  if (Number.isFinite(directYear) && directYear > 0) return Math.floor(directYear)
-
-  const semester = typeof student.currentSemester === 'string' ? student.currentSemester.trim() : ''
-  if (!semester) return null
-
-  const match = semester.match(/^(?:year\s*)?(\d+)$/i)
-  if (!match) return null
-
-  const parsed = Number(match[1])
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null
 }
 
 async function getAcademicStructure() {
@@ -87,7 +74,7 @@ export async function assignBaseCoursesToFirstYearStudent(
     return { assigned: 0, removed: 0, skipped: 0, matchedMajorId: null as string | null }
   }
 
-  const currentYear = deriveCurrentYear(student as Student & Record<string, unknown>)
+  const currentYear = deriveStudentYearLevel(student as Student & Record<string, unknown>)
   if (currentYear !== 1) {
     return { assigned: 0, removed: 0, skipped: 0, matchedMajorId: null as string | null }
   }
@@ -190,6 +177,7 @@ export async function assignBaseCoursesToFirstYearStudent(
       gradeTotal: null,
       letterGrade: null,
       semester: course.startDate?.slice(0, 7) ?? null,
+      semesterId: course.semesterId ?? null,
       tuitionCharged: false,
       chargedAt: null,
       paymentVerified: paymentCleared,
@@ -242,7 +230,7 @@ export async function syncBaseCoursesForFirstYearStudentsByMajor(majorId: string
   const results: Array<{ assigned: number; removed: number; skipped: number; matchedMajorId: string | null }> = []
 
   for (const student of students) {
-    const currentYear = deriveCurrentYear(student as Student & Record<string, unknown>)
+    const currentYear = deriveStudentYearLevel(student as Student & Record<string, unknown>)
     if (currentYear !== 1) continue
 
     const structure = await getAcademicStructure()

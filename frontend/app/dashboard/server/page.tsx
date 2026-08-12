@@ -5,7 +5,7 @@ import { DashboardRouteGuard } from "@/components/dashboard-route-guard"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Activity, Server, Users, Database, ShieldCheck, Cpu, MemoryStick, Globe } from "lucide-react"
+import { Activity, Server, Users, Database, ShieldCheck, Cpu, MemoryStick, Globe, Terminal } from "lucide-react"
 import { apiFetch, authHeaders, API_BASE_URL } from "@/lib/api-client"
 
 interface OverviewData {
@@ -63,6 +63,24 @@ interface LiveEvent {
   role?: string | null
 }
 
+interface ConsoleLogLine {
+  id: string
+  level: number
+  levelLabel: string
+  time: number
+  msg: string
+  line: string
+}
+
+const LEVEL_COLOR: Record<string, string> = {
+  TRACE: "text-slate-400",
+  DEBUG: "text-slate-400",
+  INFO: "text-emerald-400",
+  WARN: "text-amber-400",
+  ERROR: "text-red-400",
+  FATAL: "text-red-500",
+}
+
 function formatBytes(bytes: number) {
   if (!bytes) return "0 MB"
   const mb = bytes / (1024 * 1024)
@@ -101,7 +119,11 @@ function ServerPanel() {
   const [overview, setOverview] = useState<OverviewData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [events, setEvents] = useState<LiveEvent[]>([])
+  const [consoleLines, setConsoleLines] = useState<ConsoleLogLine[]>([])
   const abortRef = useRef<AbortController | null>(null)
+  const consoleAbortRef = useRef<AbortController | null>(null)
+  const consoleEndRef = useRef<HTMLDivElement | null>(null)
+  const [autoScroll, setAutoScroll] = useState(true)
 
   useEffect(() => {
     let cancelled = false
@@ -164,6 +186,60 @@ function ServerPanel() {
     connect()
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    apiFetch<ConsoleLogLine[]>("/server-monitor/console-logs?limit=300")
+      .then(setConsoleLines)
+      .catch(() => {})
+
+    const controller = new AbortController()
+    consoleAbortRef.current = controller
+
+    async function connect() {
+      while (!controller.signal.aborted) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/server-monitor/console-stream`, {
+            headers: { ...authHeaders() },
+            signal: controller.signal,
+          })
+          if (!response.ok || !response.body) break
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ""
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const chunks = buffer.split("\n\n")
+            buffer = chunks.pop() ?? ""
+            for (const chunk of chunks) {
+              const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "))
+              if (!dataLine) continue
+              try {
+                const parsed = JSON.parse(dataLine.slice(6))
+                if (parsed?.type === "connected") continue
+                setConsoleLines((prev) => [...prev, parsed as ConsoleLogLine].slice(-1000))
+              } catch {
+                // ignore malformed chunk
+              }
+            }
+          }
+        } catch {
+          // stream closed or aborted — fall through to retry below
+        }
+        if (controller.signal.aborted) break
+        await new Promise((resolve) => setTimeout(resolve, 3000))
+      }
+    }
+    connect()
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    if (autoScroll) {
+      consoleEndRef.current?.scrollIntoView({ block: "end" })
+    }
+  }, [consoleLines, autoScroll])
 
   return (
     <div className="space-y-6">
@@ -306,6 +382,32 @@ function ServerPanel() {
                 )}
               </tbody>
             </table>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            <Terminal className="h-4 w-4" /> Backend Console
+          </h2>
+          <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+            Auto-scroll
+          </label>
+        </div>
+        <Card className="border-slate-800 bg-slate-950">
+          <CardContent className="max-h-[480px] overflow-y-auto p-3 font-mono text-xs leading-relaxed">
+            {consoleLines.length === 0 ? (
+              <p className="text-slate-500">Waiting for backend output…</p>
+            ) : (
+              consoleLines.map((entry) => (
+                <pre key={entry.id} className={`whitespace-pre-wrap break-words ${LEVEL_COLOR[entry.levelLabel] ?? "text-slate-300"}`}>
+                  {entry.line}
+                </pre>
+              ))
+            )}
+            <div ref={consoleEndRef} />
           </CardContent>
         </Card>
       </section>

@@ -8,6 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/hooks/use-toast"
 import { cancelEventRsvp, fetchCampusEvents, fetchEventRsvpStatus, rsvpToEvent } from "@/lib/campus-api"
 import type { CampusEvent } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 const categoryLabel: Record<string, string> = {
   academic: "Academic",
@@ -18,6 +19,14 @@ const categoryLabel: Record<string, string> = {
 }
 
 export default function CampusEventsPage() {
+  return (
+    <StudentFeatureGate featureKey="campus-events">
+      <CampusEventsPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function CampusEventsPageInner() {
   const { toast } = useToast()
   const [events, setEvents] = useState<CampusEvent[]>([])
   const [rsvpStatus, setRsvpStatus] = useState<Record<string, boolean>>({})

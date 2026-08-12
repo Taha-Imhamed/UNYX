@@ -6,6 +6,7 @@ import type {
   PaymentMethod,
   PaymentTransaction,
   Professor,
+  Semester,
   Student,
   StudentBalanceSummary,
   StudentFinancialSnapshot,
@@ -249,6 +250,10 @@ export function fetchStudentEnrollments(studentId: string, signal?: AbortSignal)
   return apiFetch<EnrollmentPagePayload>(`/enrollments?${params.toString()}`, { signal }).then((payload) => payload.items)
 }
 
+export function fetchWaitlistPosition(enrollmentId: string, signal?: AbortSignal) {
+  return apiFetch<{ position: number | null; totalWaitlisted: number }>(`/enrollments/${enrollmentId}/waitlist-position`, { signal })
+}
+
 export function fetchCourses(signalOrOptions?: AbortSignal | { signal?: AbortSignal; scope?: string; includeSchedule?: boolean; openOnly?: boolean; upcomingDays?: number; page?: number; limit?: number; mine?: boolean }) {
   let signal: AbortSignal | undefined = undefined
   const params = new URLSearchParams()
@@ -270,6 +275,30 @@ export function fetchCourses(signalOrOptions?: AbortSignal | { signal?: AbortSig
 
 export function fetchAcademicStructure(signal?: AbortSignal) {
   return apiFetch<AcademicStructure>(`/enrollments/meta/academic-structure`, { signal })
+}
+
+export function fetchSemesters(signal?: AbortSignal) {
+  return apiFetch<Semester[]>(`/enrollments/meta/semesters`, { signal })
+}
+
+export function createSemester(payload: { label: string; academicYear: string; startDate: string; endDate: string; status?: Semester['status'] }) {
+  return apiFetch<Semester>(`/enrollments/meta/semesters`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateSemester(id: string, payload: Partial<{ label: string; academicYear: string; startDate: string; endDate: string; status: Semester['status'] }>) {
+  return apiFetch<Semester>(`/enrollments/meta/semesters/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteSemester(id: string) {
+  return apiFetch<{ id: string }>(`/enrollments/meta/semesters/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 export function updateAcademicStructure(payload: {
@@ -351,6 +380,7 @@ export function createCourseRequest(payload: {
   eligiblePrograms?: string[]
   eligibleFaculties?: string[]
   eligibleSemesters?: string[]
+  semesterId?: string | null
   prerequisiteCourseIds?: string[]
   creditHours?: number
   enrollmentOpen?: boolean
@@ -382,6 +412,7 @@ export function updateCourseRequest(
     eligiblePrograms?: string[]
     eligibleFaculties?: string[]
     eligibleSemesters?: string[]
+    semesterId?: string | null
     prerequisiteCourseIds?: string[]
     creditHours?: number
     enrollmentOpen?: boolean

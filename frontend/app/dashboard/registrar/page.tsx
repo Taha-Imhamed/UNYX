@@ -6,13 +6,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import { FileText } from "lucide-react"
+import { FileText, UserCheck, DollarSign } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
-import { fetchTranscriptRequestQueue, updateTranscriptRequestStatus } from "@/lib/registrar-api"
+import {
+  fetchPendingRegistrations,
+  fetchTranscriptRequestQueue,
+  registerStudentEnrollment,
+  updateTranscriptRequestStatus,
+} from "@/lib/registrar-api"
 import { fetchStudents } from "@/lib/students-api"
-import type { Student, TranscriptRequest } from "@shared/types"
+import type { Enrollment, Student, TranscriptRequest } from "@shared/types"
 
 const documentTypeLabels: Record<TranscriptRequest["documentType"], string> = {
   transcript: "Official Transcript",
@@ -42,23 +47,37 @@ function canAccessRegistrar(role?: string) {
   return role === "admin" || role === "super-admin" || role === "supervisor" || role === "registrar" || role === "it-admin"
 }
 
+// Matches backend canRegisterStudents() in registrar.ts — narrower than page view access,
+// since registration auto-bills Finance and should stay limited to the role whose job it is.
+function canRegisterStudents(role?: string) {
+  return role === "admin" || role === "super-admin" || role === "registrar"
+}
+
 export default function RegistrarDashboardPage() {
   const { toast } = useToast()
   const { user, isLoading: authLoading } = useAuth()
   const canView = canAccessRegistrar(user?.role)
+  const canRegister = canRegisterStudents(user?.role)
 
   const [requests, setRequests] = useState<TranscriptRequest[]>([])
   const [students, setStudents] = useState<Student[]>([])
+  const [pendingRegistrations, setPendingRegistrations] = useState<Enrollment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<Record<string, boolean>>({})
+  const [registerPending, setRegisterPending] = useState<Record<string, boolean>>({})
 
   const load = async () => {
     setLoadError(null)
     try {
-      const [queue, studentList] = await Promise.all([fetchTranscriptRequestQueue(), fetchStudents()])
+      const [queue, studentList, pending] = await Promise.all([
+        fetchTranscriptRequestQueue(),
+        fetchStudents(),
+        canRegister ? fetchPendingRegistrations() : Promise.resolve([]),
+      ])
       setRequests(queue)
       setStudents(studentList)
+      setPendingRegistrations(pending)
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "Unable to load transcript requests")
     }
@@ -109,6 +128,25 @@ export default function RegistrarDashboardPage() {
     }
   }
 
+  const handleRegister = async (enrollment: Enrollment) => {
+    setRegisterPending((prev) => ({ ...prev, [enrollment.id]: true }))
+    try {
+      const updated = await registerStudentEnrollment(enrollment.id)
+      toast({
+        title: "Student registered",
+        description:
+          updated.paymentStatus === "paid"
+            ? "Registered — payment cleared."
+            : "Registered — routed to Finance, payment still pending.",
+      })
+      await load()
+    } catch (error) {
+      toast({ variant: "destructive", title: "Unable to register", description: error instanceof Error ? error.message : "Please try again." })
+    } finally {
+      setRegisterPending((prev) => ({ ...prev, [enrollment.id]: false }))
+    }
+  }
+
   if (authLoading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -143,7 +181,56 @@ export default function RegistrarDashboardPage() {
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
             <Spinner className="h-4 w-4" /> Loading requests…
           </div>
-        ) : sortedRequests.length === 0 ? (
+        ) : !canRegister ? null : (
+          <div className="space-y-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <UserCheck className="h-4 w-4 text-primary" />
+              Pending Registrations
+            </h2>
+            {pendingRegistrations.length === 0 ? (
+              <Card className="border-border bg-card">
+                <CardContent className="py-8 text-center text-sm text-muted-foreground">No students awaiting registration.</CardContent>
+              </Card>
+            ) : (
+              pendingRegistrations.map((enrollment) => {
+                const student = studentsById.get(enrollment.studentId)
+                return (
+                  <Card key={enrollment.id} className="border-border bg-card">
+                    <CardHeader className="flex flex-col gap-2 pb-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          {enrollment.courseTitle}
+                          <Badge variant="outline">{enrollment.status}</Badge>
+                        </CardTitle>
+                        <p className="text-xs text-muted-foreground">
+                          {student ? `${student.firstName} ${student.lastName} (${student.displayId})` : enrollment.studentId} · tuition{" "}
+                          {enrollment.price}
+                        </p>
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={registerPending[enrollment.id]}
+                        onClick={() => handleRegister(enrollment)}
+                      >
+                        {registerPending[enrollment.id] ? <Spinner className="h-3.5 w-3.5" /> : <DollarSign className="h-3.5 w-3.5" />}
+                        Register &amp; Bill Finance
+                      </Button>
+                    </CardHeader>
+                  </Card>
+                )
+              })
+            )}
+          </div>
+        )}
+
+        {isLoading ? null : (
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <FileText className="h-4 w-4 text-primary" />
+            Document Requests
+          </h2>
+        )}
+
+        {isLoading ? null : sortedRequests.length === 0 ? (
           <Card className="border-border bg-card">
             <CardContent className="py-16 text-center text-sm text-muted-foreground">No document requests yet.</CardContent>
           </Card>

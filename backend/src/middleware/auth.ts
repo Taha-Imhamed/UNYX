@@ -1,8 +1,10 @@
 import type { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
+import { randomUUID } from 'node:crypto'
 import { maintenanceStateCollection } from '../data/collections.js'
 import type { AccessProfile, Permission, SystemRole } from '../../../shared/types/index.js'
 import { logger } from '../lib/logger.js'
+import { isTokenRevoked } from '../lib/revoked-tokens.js'
 
 const rawSecret = process.env.JWT_SECRET
 
@@ -28,10 +30,12 @@ export interface AuthTokenPayload {
   accessProfile?: AccessProfile
   studentId?: string | null
   professorId?: string | null
+  jti?: string
 }
 
 export interface AuthContext extends AuthTokenPayload {
   effectivePermissions: Permission[]
+  jti?: string
 }
 
 declare global {
@@ -143,11 +147,11 @@ const rolePermissions: Record<AuthTokenPayload['role'], Permission[]> = {
   supervisor: ['students:view', 'students:edit', 'professors:view', 'professors:edit', 'marketing:view', 'marketing:manage', 'applications:view', 'applications:manage', 'enrollment:view', 'enrollment:manage', 'edit_any_grade', 'feedback:view', 'feedback:manage', 'news:view', 'news:manage', 'reports:view', 'reports:export', 'ADMIN_VIEW_SCHEDULE'],
   advisor: ['students:view', 'enrollment:view', 'enrollment:manage', 'feedback:view', 'reports:view'],
   'teaching-assistant': ['students:view', 'enrollment:view', 'reports:view'],
-  registrar: ['users:manage', 'users:create', 'users:edit', 'students:view', 'students:create', 'students:edit', 'enrollment:view', 'enrollment:manage', 'edit_any_grade', 'reports:view', 'ADMIN_VIEW_SCHEDULE', 'MANAGE_RESOURCES'],
+  registrar: ['students:view', 'students:edit', 'enrollment:view', 'enrollment:manage', 'enrollment:register', 'reports:view'],
   admissions: ['students:view', 'students:create', 'students:edit', 'marketing:view', 'marketing:manage', 'applications:view', 'applications:manage', 'enrollment:view', 'enrollment:manage', 'reports:view'],
   finance: ['students:view', 'finance:view', 'finance:manage', 'finance:approve', 'VIEW_FINANCIALS', 'reports:view', 'reports:export'],
   'it-admin': ['users:manage', 'users:edit', 'audit:view', 'audit:export', 'settings:manage', 'settings:security', 'settings:integrations', 'settings:sso', 'reports:view'],
-  dean: ['students:view', 'professors:view', 'enrollment:view', 'reports:view'],
+  dean: ['students:view', 'professors:view', 'professors:manage', 'enrollment:view', 'reports:view', 'reports:export', 'academic:approve', 'graduation:approve', 'hod:oversight'],
   hod: ['professors:view', 'enrollment:view', 'enrollment:manage', 'reports:view'],
   librarian: ['reports:view'],
   'student-affairs': ['students:view', 'students:edit', 'marketing:view', 'marketing:manage', 'feedback:view', 'feedback:manage', 'reports:view'],
@@ -180,10 +184,10 @@ function resolvePermissions(role: AuthTokenPayload['role'], overrides?: Partial<
 }
 
 export function signAuthToken(payload: AuthTokenPayload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '12h' })
+  return jwt.sign({ ...payload, jti: payload.jti ?? randomUUID() }, JWT_SECRET, { expiresIn: '12h' })
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const rawPath = req.originalUrl.split('?')[0]
   const path = rawPath.length > 1 ? rawPath.replace(/\/+$/, '') : rawPath
   if (publicPaths.has(path)) {
@@ -204,6 +208,13 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as AuthTokenPayload
+    // Forced-timeout support: a JWT is otherwise valid until its 12h expiry with no
+    // server-side way to revoke it early, so IoT Connectors' "timeout" action records the
+    // jti here — every request after that point is rejected even though the token itself
+    // still verifies fine.
+    if (decoded.jti && (await isTokenRevoked(decoded.jti))) {
+      return res.status(401).json({ success: false, error: 'Session has been ended by an administrator' })
+    }
     req.auth = { ...decoded, effectivePermissions: resolvePermissions(decoded.role, decoded.permissions, decoded.secondaryRoles) }
     return next()
   } catch (error) {

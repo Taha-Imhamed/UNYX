@@ -42,6 +42,7 @@ const createInvoiceSchema = z.object({
   studentId: z.string().trim().min(1),
   title: z.string().trim().min(1),
   semester: z.string().trim().optional().nullable(),
+  semesterId: z.string().trim().optional().nullable(),
   issueDate: z.string().trim().min(1),
   dueDate: z.string().trim().min(1),
   notes: z.string().trim().optional().nullable(),
@@ -419,6 +420,78 @@ async function createChargeTransaction(options: {
   })
 }
 
+// Used by the registrar's student-registration flow (registrar.ts) to auto-bill tuition
+// without granting registrar any finance:* permission — this is the only door into Finance
+// that registrar's endpoint calls, and it only ever creates one invoice for one course price.
+export async function createTuitionInvoiceForEnrollment(options: {
+  studentId: string
+  courseTitle: string
+  price: number
+  semester?: string | null
+  semesterId?: string | null
+  createdBy: string
+}): Promise<FinanceInvoice> {
+  const { student } = await getStudentOr404(options.studentId)
+  if (!student) {
+    throw new Error('Student not found')
+  }
+
+  const now = new Date().toISOString()
+  const amount = Number(options.price.toFixed(2))
+  const lineItems: FinanceInvoiceLineItem[] = [
+    {
+      id: buildId('INVLINE'),
+      type: 'tuition',
+      label: `Tuition: ${options.courseTitle}`,
+      description: null,
+      quantity: 1,
+      unitAmount: amount,
+      total: amount,
+    },
+  ]
+
+  const invoice: FinanceInvoice = {
+    id: buildId('FININV'),
+    invoiceNumber: buildId('INV'),
+    studentId: student.id,
+    studentName: `${student.firstName} ${student.lastName}`,
+    studentDisplayId: student.displayId ?? null,
+    title: `Tuition: ${options.courseTitle}`,
+    semester: options.semester ?? null,
+    semesterId: options.semesterId ?? null,
+    issueDate: now,
+    dueDate: now,
+    status: 'open',
+    subtotal: amount,
+    total: amount,
+    paidAmount: 0,
+    balanceDue: amount,
+    currency: 'USD',
+    notes: `Auto-generated on registration by ${options.createdBy}`,
+    lineItems,
+    createdBy: options.createdBy,
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  const invoicesCol = await financeInvoicesCollection()
+  await invoicesCol.insertOne(invoice)
+  await createChargeTransaction({
+    student: { ...student, balance: student.balance ?? 0 },
+    amount,
+    note: `Invoice ${invoice.invoiceNumber}: ${invoice.title}`,
+    invoiceId: invoice.id,
+  })
+  await writeAuditLog({
+    action: 'finance_invoice_created',
+    entityType: 'finance_invoice',
+    entityId: invoice.id,
+    details: { studentId: student.id, total: invoice.total, source: 'registrar_registration' },
+  })
+
+  return invoice
+}
+
 financeRoutes.get('/invoices', requirePermission('finance:view', 'VIEW_FINANCIALS'), async (req, res) => {
   try {
     const query = typeof req.query.query === 'string' ? req.query.query.trim().toLowerCase() : ''
@@ -466,6 +539,7 @@ financeRoutes.post('/invoices', requirePermission('finance:manage'), async (req,
       studentDisplayId: student.displayId ?? null,
       title: parsed.data.title,
       semester: parsed.data.semester ?? null,
+      semesterId: parsed.data.semesterId ?? null,
       issueDate: parsed.data.issueDate,
       dueDate: parsed.data.dueDate,
       status: 'open',

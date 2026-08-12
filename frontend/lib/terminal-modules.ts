@@ -36,6 +36,7 @@ export const ROLE_LABELS: Record<string, string> = {
 }
 
 export const TERMINAL_MODULES: TerminalModuleDef[] = [
+  { key: "dashboard", label: "Dashboard", features: [], sidebarNames: ["Dashboard"] },
   { key: "students", label: "Students", features: [], sidebarNames: ["Students"] },
   {
     key: "enrollment",
@@ -47,6 +48,9 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: "utilization", label: "Seat Utilization" },
     ],
   },
+  { key: "advising", label: "Advising", features: [], sidebarNames: ["My Advisees", "Advising Appointments"] },
+  { key: "classes", label: "Classes", features: [], sidebarNames: ["Classes"] },
+  { key: "campuses", label: "Campuses", features: [], sidebarNames: ["Campuses"] },
   { key: "professors", label: "Professors", features: [], sidebarNames: ["Professors"] },
   {
     key: "finance",
@@ -91,6 +95,13 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: "availability-calendar", label: "Facility Availability Calendar" },
     ],
   },
+  { key: "security-records", label: "Security Records", features: [], sidebarNames: ["Security Records"] },
+  { key: "facilities-records", label: "Facilities Records", features: [], sidebarNames: ["Facilities Records"] },
+  { key: "research-records", label: "Research Records", features: [], sidebarNames: ["Research Records"] },
+  { key: "device-logs", label: "Device Logs", features: [], sidebarNames: ["Device Logs"] },
+  { key: "hr-records", label: "HR Records", features: [], sidebarNames: ["HR Records"] },
+  { key: "library-records", label: "Library Records", features: [], sidebarNames: ["Library Records"] },
+  { key: "campus-life", label: "Campus Life", features: [], sidebarNames: ["Campus Life"] },
   {
     key: "research-office",
     label: "Research Office",
@@ -176,6 +187,12 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: "bulk-deactivation", label: "Bulk Deactivation/Reactivation" },
     ],
   },
+  { key: "terminal", label: "Terminal", features: [], sidebarNames: ["Terminal"] },
+  { key: "last-features", label: "Last Features", features: [], sidebarNames: ["Last Features"] },
+  { key: "server", label: "Server", features: [], sidebarNames: ["Server"] },
+  { key: "iot-connectors", label: "IoT Connectors", features: [], sidebarNames: ["IoT Connectors"] },
+  { key: "requests", label: "Requests", features: [], sidebarNames: ["Requests"] },
+  { key: "tickets", label: "Tickets", features: [], sidebarNames: ["Tickets"] },
   { key: "settings", label: "Settings", features: [], sidebarNames: ["Settings"] },
   {
     key: "student-portal",
@@ -201,6 +218,14 @@ export const TERMINAL_MODULES: TerminalModuleDef[] = [
       { key: "academic-hold", label: "Academic Hold Visibility" },
       { key: "course-catalog", label: "Course Catalog Search" },
       { key: "notifications", label: "Notifications" },
+      { key: "campus-events", label: "Campus Events" },
+      { key: "housing", label: "Housing & Meal Plan" },
+      { key: "course-reviews", label: "Course Reviews" },
+      { key: "message", label: "Message Inbox" },
+      { key: "support", label: "Support Requests" },
+      { key: "enrollment-renewal", label: "Enrollment Renewal" },
+      { key: "waitlist-status", label: "Waitlist Position" },
+      { key: "tickets", label: "Support Tickets" },
     ],
   },
   {

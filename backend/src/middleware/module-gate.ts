@@ -19,6 +19,7 @@ const API_PREFIX_MODULE_MAP: Record<string, string> = {
   '/api/security': 'security',
   '/api/it-admin': 'it-admin',
   '/api/users': 'users',
+  '/api/support-tickets': 'tickets',
 }
 
 function moduleKeyForPath(path: string): string | null {

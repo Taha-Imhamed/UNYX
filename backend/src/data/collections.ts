@@ -1,5 +1,5 @@
 import type { CollectionLike } from '../db/postgres.js'
-import { getCollection } from '../db/postgres.js'
+import { getCollection, runDbQuery } from '../db/postgres.js'
 import type {
   Student,
   Professor,
@@ -34,6 +34,9 @@ import type {
   ScholarshipAward,
   InterviewSchedule,
   OfferLetter,
+  AiConversation,
+  AiMessage,
+  AiPendingAction,
 } from '../../../shared/types/index.js'
 
 export async function studentsCollection(): Promise<CollectionLike<Student>> {
@@ -166,4 +169,70 @@ export async function interviewSchedulesCollection(): Promise<CollectionLike<Int
 
 export async function offerLettersCollection(): Promise<CollectionLike<OfferLetter>> {
   return getCollection<OfferLetter>('offer_letters')
+}
+
+let aiAssistantStorageReady = false
+
+// Lazily creates the AI assistant's tables on first use, same pattern as
+// ensureAcademicComplianceStorage in lib/academic-compliance.ts.
+async function ensureAiAssistantStorage() {
+  if (aiAssistantStorageReady) return
+
+  await runDbQuery(`
+    create table if not exists public.ai_conversations (
+      id text primary key,
+      user_id text not null,
+      user_role text not null,
+      title text null,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    )
+  `)
+
+  await runDbQuery(`
+    create table if not exists public.ai_messages (
+      id text primary key,
+      conversation_id text not null,
+      role text not null,
+      content text not null,
+      tool_calls jsonb null,
+      created_at timestamptz not null default now()
+    )
+  `)
+
+  await runDbQuery(`
+    create table if not exists public.ai_pending_actions (
+      id text primary key,
+      conversation_id text not null,
+      tool_name text not null,
+      input jsonb not null default '{}'::jsonb,
+      status text not null default 'pending',
+      created_by text not null,
+      created_at timestamptz not null default now(),
+      executed_at timestamptz null,
+      result_summary text null,
+      result_entity_id text null
+    )
+  `)
+
+  await runDbQuery(`create index if not exists idx_ai_conversations_user_id on public.ai_conversations (user_id, updated_at desc)`)
+  await runDbQuery(`create index if not exists idx_ai_messages_conversation_id on public.ai_messages (conversation_id, created_at asc)`)
+  await runDbQuery(`create index if not exists idx_ai_pending_actions_conversation_id on public.ai_pending_actions (conversation_id, created_at desc)`)
+
+  aiAssistantStorageReady = true
+}
+
+export async function aiConversationsCollection(): Promise<CollectionLike<AiConversation>> {
+  await ensureAiAssistantStorage()
+  return getCollection<AiConversation>('ai_conversations')
+}
+
+export async function aiMessagesCollection(): Promise<CollectionLike<AiMessage>> {
+  await ensureAiAssistantStorage()
+  return getCollection<AiMessage>('ai_messages')
+}
+
+export async function aiPendingActionsCollection(): Promise<CollectionLike<AiPendingAction>> {
+  await ensureAiAssistantStorage()
+  return getCollection<AiPendingAction>('ai_pending_actions')
 }

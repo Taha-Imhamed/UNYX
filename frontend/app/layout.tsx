@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/lib/auth-context"
 import { ModuleTogglesProvider } from "@/lib/terminal-context"
+import { IotChannelProvider } from "@/components/iot-channel-provider"
 import { AppThemeProvider } from "@/components/theme/app-theme-provider"
 import { THEME_ANTI_FLASH_SCRIPT } from "@/lib/theme-presets"
 import appLogo from "../app logog  3 last.png"
@@ -48,7 +49,9 @@ export default function RootLayout({
           />
           <div className="relative z-10 min-h-screen">
             <AuthProvider>
-              <ModuleTogglesProvider>{children}</ModuleTogglesProvider>
+              <ModuleTogglesProvider>
+                <IotChannelProvider>{children}</IotChannelProvider>
+              </ModuleTogglesProvider>
             </AuthProvider>
           </div>
         </div>

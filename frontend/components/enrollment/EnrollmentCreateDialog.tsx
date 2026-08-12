@@ -143,26 +143,17 @@ export function EnrollmentCreateDialog({
     return courses.find((course) => course.id === createForm.courseId) ?? null
   }, [courses, createForm.courseId])
 
-  const createCoursesFiltered = useMemo(() => {
-    // show courses relevant to the selected student (by program/major/year) when possible
-    return courses.filter((course) => {
-      if (!selectedStudent) return true
-      const prog = (selectedStudent.program || "").toLowerCase()
-      const major = (selectedStudent.major || "").toLowerCase()
-      const year = String(selectedStudent.currentYear ?? "")
-      const eligible = (course.eligiblePrograms || []).map((e) => String(e).toLowerCase())
-      const eligibleYears = getEligibleYearValues(course.eligibleSemesters)
-      const courseDept = (course.department || "").toLowerCase()
-      if (eligibleYears.length > 0 && year && !eligibleYears.includes(year)) return false
-      if (eligible.length > 0) {
-        if (eligible.includes(prog) || eligible.includes(major) || eligible.includes(year)) return true
-        return false
-      }
-      // fallback: match by department or allow
-      if (courseDept && (courseDept === (selectedStudent.faculty || "").toLowerCase())) return true
-      return true
-    })
-  }, [courses, selectedStudent])
+  // This dialog is an admin/staff override tool — it intentionally lists every course
+  // (the backend does not eligibility-filter courses for admin-scoped callers either),
+  // so admins can manually place a student outside normal self-service rules. Eligibility
+  // is surfaced as a non-blocking hint below, not used to hide courses from the list.
+  const isCourseYearEligible = (course: Course) => {
+    if (!selectedStudent) return true
+    const year = String(selectedStudent.currentYear ?? selectedStudent.yearLevel ?? "")
+    const eligibleYears = getEligibleYearValues(course.eligibleSemesters)
+    if (eligibleYears.length === 0 || !year) return true
+    return eligibleYears.includes(year)
+  }
 
   const selectedCreateCourseWindowOpen = selectedCreateCourse ? isEnrollmentWindowOpen(selectedCreateCourse) : false
 
@@ -263,9 +254,10 @@ export function EnrollmentCreateDialog({
                     <CommandList className="max-h-64 overflow-y-auto">
                       <CommandEmpty>No courses found.</CommandEmpty>
                       <CommandGroup>
-                        {createCoursesFiltered.map((course) => {
+                        {courses.map((course) => {
                           const fullLabel = `${course.code} • ${course.title} • ${course.professorName} ${course.sectionId ? `• Section ${course.sectionId}` : ""}`
                           const courseOpen = isEnrollmentWindowOpen(course)
+                          const yearEligible = isCourseYearEligible(course)
                           return (
                             <CommandItem
                               key={course.id}
@@ -280,6 +272,7 @@ export function EnrollmentCreateDialog({
                                 <span className="text-xs text-muted-foreground">
                                   {course.schedule?.length ? `${course.schedule.length} sessions` : "No schedule"}
                                   {!courseOpen ? " — enrollment closed" : ""}
+                                  {!yearEligible ? " — outside student's usual year" : ""}
                                 </span>
                               </div>
                             </CommandItem>

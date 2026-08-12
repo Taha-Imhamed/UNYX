@@ -343,6 +343,16 @@ const universalStaffFeature: FeatureTile = {
   icon: WalletCards,
 }
 
+const requestReviewerRoles = new Set(["admin", "super-admin", "supervisor"])
+
+const universalReviewerFeature: FeatureTile = {
+  label: "Staff Requests",
+  description: "Review purchase and fund requests submitted by staff, and edit or resolve them.",
+  metric: (m) => `${m.unresolvedItems} active request-related items`,
+  href: "/dashboard/requests",
+  icon: WalletCards,
+}
+
 function toMetricValue(items: unknown): number {
   if (Array.isArray(items)) return items.length
   if (typeof items === "number") return items
@@ -641,8 +651,10 @@ export function RoleWorkspaceDashboard() {
         merged.push(feature)
       }
     })
-    if (!merged.some((entry) => entry.label === universalStaffFeature.label)) {
-      merged.push(universalStaffFeature)
+    const isReviewer = requestReviewerRoles.has(currentRole)
+    const requestFeature = isReviewer ? universalReviewerFeature : universalStaffFeature
+    if (!merged.some((entry) => entry.label === universalStaffFeature.label || entry.label === universalReviewerFeature.label)) {
+      merged.push(requestFeature)
     }
     return merged.filter((feature) => isModuleEnabled(feature.href ? moduleKeyForHref(feature.href) : null))
   }, [currentRole, hasPermission, isModuleEnabled])

@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
+import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
 import { useStudentProfile } from "@/hooks/use-student-portal"
@@ -38,6 +39,11 @@ export default function StudentSettingsPage() {
   const [savingPassword, setSavingPassword] = useState(false)
   const [mfaEnabled, setMfaEnabled] = useState(false)
 
+  const [emailNotifications, setEmailNotifications] = useState(true)
+  const [smsNotifications, setSmsNotifications] = useState(false)
+  const [pushNotifications, setPushNotifications] = useState(true)
+  const [savingNotifications, setSavingNotifications] = useState(false)
+
   useEffect(() => {
     if (!user) return
     setUsername(user.username ?? "")
@@ -53,6 +59,10 @@ export default function StudentSettingsPage() {
     setPhone(profile.phone ?? "")
     setProgram(profile.program ?? "")
     setDateOfBirth(profile.dateOfBirth ?? "")
+    const prefs = profile.notificationPreferences
+    setEmailNotifications(prefs?.email ?? true)
+    setSmsNotifications(prefs?.sms ?? false)
+    setPushNotifications(prefs?.push ?? true)
   }, [profile])
 
   if (isLoading || !user) {
@@ -130,6 +140,32 @@ export default function StudentSettingsPage() {
     } catch (error) {
       console.error("Personal update failed", error)
       toast({ variant: "destructive", title: "Update failed", description: "Could not save your details." })
+    }
+  }
+
+  const handleNotificationToggle = async (channel: "email" | "sms" | "push", value: boolean) => {
+    if (channel === "email") setEmailNotifications(value)
+    if (channel === "sms") setSmsNotifications(value)
+    if (channel === "push") setPushNotifications(value)
+
+    setSavingNotifications(true)
+    try {
+      await updateStudentSelf({
+        notificationPreferences: {
+          email: channel === "email" ? value : emailNotifications,
+          sms: channel === "sms" ? value : smsNotifications,
+          push: channel === "push" ? value : pushNotifications,
+        },
+      })
+      reloadProfile?.()
+    } catch (error) {
+      console.error("Notification preference update failed", error)
+      toast({ variant: "destructive", title: "Update failed", description: "Could not save notification preferences." })
+      if (channel === "email") setEmailNotifications(!value)
+      if (channel === "sms") setSmsNotifications(!value)
+      if (channel === "push") setPushNotifications(!value)
+    } finally {
+      setSavingNotifications(false)
     }
   }
 
@@ -276,6 +312,38 @@ export default function StudentSettingsPage() {
       </div>
 
       <MfaSettingsCard userId={user.id} mfaEnabled={mfaEnabled} onChange={setMfaEnabled} />
+
+      <Card className="border border-border bg-card shadow-sm">
+        <CardHeader>
+          <CardTitle>Notification preferences</CardTitle>
+          <CardDescription>Choose how you want to hear about grades, announcements, and account alerts.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Email</p>
+              <p className="text-xs text-muted-foreground">Grade postings, announcements, payment receipts.</p>
+            </div>
+            <Switch checked={emailNotifications} disabled={savingNotifications} onCheckedChange={(v) => handleNotificationToggle("email", v)} />
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">SMS</p>
+              <p className="text-xs text-muted-foreground">Time-sensitive alerts sent to your phone.</p>
+            </div>
+            <Switch checked={smsNotifications} disabled={savingNotifications} onCheckedChange={(v) => handleNotificationToggle("sms", v)} />
+          </div>
+          <Separator />
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-foreground">Push</p>
+              <p className="text-xs text-muted-foreground">In-app and browser notifications.</p>
+            </div>
+            <Switch checked={pushNotifications} disabled={savingNotifications} onCheckedChange={(v) => handleNotificationToggle("push", v)} />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border border-border bg-card shadow-sm">
         <CardHeader>

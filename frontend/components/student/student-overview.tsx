@@ -10,6 +10,7 @@ import useLiveSync from "@/hooks/use-live-sync"
 import { useEnrollmentWindow, useStudentHints, useStudentProfile, useStudentEnrollments, useStudentFinancials } from "@/hooks/use-student-portal"
 import { useAuth } from "@/lib/auth-context"
 import { fetchNews } from "@/lib/news-api"
+import { deriveStudentYearLevel } from "@/lib/academic-terms"
 import type { NewsItem, UserNotification } from "@shared/types"
 import {
   ArrowRight,
@@ -46,20 +47,9 @@ function Sparkline({ values }: { values: number[] }) {
   )
 }
 
-function deriveAcademicYear(currentSemester?: string | null, enrollmentDate?: string | null) {
-  const yearMatch = currentSemester?.match(/^(?:year\s*)?(\d+)$/i)
-  if (yearMatch) {
-    return `Year ${Number(yearMatch[1])}`
-  }
-  const token = (currentSemester ?? "").trim().toLowerCase()
-  const semesterMatch = token.match(/(\d+)/)
-  if (semesterMatch) {
-    const semesterNumber = Number(semesterMatch[1])
-    if (Number.isFinite(semesterNumber) && semesterNumber > 0) {
-      const year = Math.ceil(semesterNumber / 2)
-      return `Year ${year} - Semester ${semesterNumber}`
-    }
-  }
+function deriveAcademicYear(student: Parameters<typeof deriveStudentYearLevel>[0], enrollmentDate?: string | null) {
+  const yearLevel = deriveStudentYearLevel(student)
+  if (yearLevel) return `Year ${yearLevel}`
 
   if (enrollmentDate) {
     const start = new Date(enrollmentDate)
@@ -107,9 +97,7 @@ export function StudentOverviewPage() {
   const balanceStatus = financials?.balance ?? profile?.balance ?? 0
   const fullyPaid = Number(balanceStatus) <= 0
   const enrollmentOpen = enrollmentWindow?.enrollmentOpen !== false
-  const academicYear = (profile as any)?.currentYear
-    ? `Year ${Number((profile as any).currentYear)}`
-    : deriveAcademicYear((profile as any)?.currentSemester, profile?.enrollmentDate)
+  const academicYear = deriveAcademicYear(profile, profile?.enrollmentDate)
   const firstYear = academicYear.toLowerCase().includes("year 1")
   const spotlightMessage = firstYear
     ? "Your first-year classes are coordinated by the registrar. Use the portal to stay ahead on billing, announcements, and academic updates."

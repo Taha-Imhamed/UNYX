@@ -27,15 +27,20 @@ import { facilitiesRoutes } from './routes/facilities.js'
 import { itAdminRoutes } from './routes/it-admin.js'
 import { terminalRoutes } from './routes/terminal.js'
 import { registrarRoutes } from './routes/registrar.js'
+import { deanRoutes } from './routes/dean.js'
+import { aiAssistantRoutes } from './routes/ai-assistant.js'
 import { researchOfficeRoutes } from './routes/research-office.js'
 import { securityRoutes } from './routes/security.js'
 import { adminScheduleRoutes } from './routes/admin-schedule.js'
 import { serverMonitorRoutes } from './routes/server-monitor.js'
+import { systemDiagnosticsRoutes } from './routes/system-diagnostics.js'
 import { hrRoutes } from './routes/hr.js'
 import { libraryRoutes } from './routes/library.js'
 import { campusRoutes } from './routes/campus.js'
 import { advisingRoutes } from './routes/advising.js'
 import { courseReviewRoutes } from './routes/course-reviews.js'
+import { supportTicketRoutes } from './routes/support-tickets.js'
+import { iotConnectorRoutes } from './routes/iot-connectors.js'
 import { requireAuth, enforceMaintenanceMode } from './middleware/auth.js'
 import { enforceModuleGate } from './middleware/module-gate.js'
 import { ensureDatabaseConnection, getActiveDbInfo, runDbQuery } from './db/postgres.js'
@@ -91,7 +96,7 @@ app.use(express.json({ limit: '10mb' }))
 // Serves locally-stored uploads (default storage backend, see lib/storage.ts). No-op if
 // STORAGE_DRIVER=s3 is used instead — files there are served directly from S3/CDN.
 app.use('/uploads', express.static(UPLOADS_DIR))
-app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/api/health' || req.url === '/api/server-monitor/stream' } }))
+app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/api/health' || req.url === '/api/server-monitor/stream' || req.url === '/api/server-monitor/console-stream' || req.url === '/api/iot/stream' } }))
 
 // Live traffic log: records every request (method, path, status, IP, device) for the server-monitor page
 app.use((req, res, next) => {
@@ -144,14 +149,19 @@ app.use('/api/research-office', researchOfficeRoutes)
 app.use('/api/it-admin', itAdminRoutes)
 app.use('/api/terminal', terminalRoutes)
 app.use('/api/registrar', registrarRoutes)
+app.use('/api/dean', deanRoutes)
+app.use('/api/ai-assistant', aiAssistantRoutes)
 app.use('/api/admissions', admissionsRoutes)
 app.use('/api/admin', adminScheduleRoutes)
 app.use('/api/server-monitor', serverMonitorRoutes)
+app.use('/api/system-diagnostics', systemDiagnosticsRoutes)
 app.use('/api/hr', hrRoutes)
 app.use('/api/library', libraryRoutes)
 app.use('/api/campus', campusRoutes)
 app.use('/api/advising', advisingRoutes)
 app.use('/api/course-reviews', courseReviewRoutes)
+app.use('/api/support-tickets', supportTicketRoutes)
+app.use('/api/iot', iotConnectorRoutes)
 app.use(siteContentRoutes)
 app.use('/api', studentHintsRoutes)
 app.use(studentHintsRoutes)

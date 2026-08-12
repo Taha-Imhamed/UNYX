@@ -24,6 +24,7 @@ function DepartmentCoursesPageInner() {
   const { courses, isLoading, error } = useAvailableCourses(Boolean(profile))
   const { enroll, isSubmitting } = useEnrollInCourse()
   const [search, setSearch] = useState("")
+  const [typeFilter, setTypeFilter] = useState<"all" | "major" | "common">("all")
 
   const departmentCourses = useMemo(() => {
     if (!profile) return []
@@ -31,12 +32,14 @@ function DepartmentCoursesPageInner() {
       const matchesDepartment =
         (course.department && (course.department === profile.faculty || course.department === profile.program)) ||
         (course.eligiblePrograms?.length && profile.program && course.eligiblePrograms.includes(profile.program)) ||
-        (course.eligibleFaculties?.length && profile.faculty && course.eligibleFaculties.includes(profile.faculty))
+        (course.eligibleFaculties?.length && profile.faculty && course.eligibleFaculties.includes(profile.faculty)) ||
+        course.courseType === "common"
       return Boolean(matchesDepartment)
     })
   }, [courses, profile])
 
   const filtered = departmentCourses.filter((course) => {
+    if (typeFilter !== "all" && course.courseType !== typeFilter) return false
     const q = search.trim().toLowerCase()
     if (!q) return true
     return course.title.toLowerCase().includes(q) || course.code.toLowerCase().includes(q)
@@ -65,8 +68,21 @@ function DepartmentCoursesPageInner() {
         <CardHeader>
           <CardTitle>Search</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
           <Input placeholder="Search by title or code..." value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-sm" />
+          <div className="flex flex-wrap gap-2">
+            {(["all", "major", "common"] as const).map((option) => (
+              <Button
+                key={option}
+                type="button"
+                size="sm"
+                variant={typeFilter === option ? "default" : "outline"}
+                onClick={() => setTypeFilter(option)}
+              >
+                {option === "all" ? "All courses" : option === "major" ? "Major requirements" : "Common / general ed"}
+              </Button>
+            ))}
+          </div>
         </CardContent>
       </Card>
 
@@ -96,6 +112,9 @@ function DepartmentCoursesPageInner() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <Badge variant={course.courseType === "common" ? "secondary" : "outline"}>
+                  {course.courseType === "common" ? "Common" : "Major"}
+                </Badge>
                 <Badge variant="outline">{course.enrollmentOpen === false ? "Closed" : "Open"}</Badge>
                 <Button size="sm" disabled={isSubmitting || course.enrollmentOpen === false} onClick={() => handleEnroll(course.id)}>
                   Enroll

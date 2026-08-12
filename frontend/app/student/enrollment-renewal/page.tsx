@@ -7,8 +7,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Spinner } from "@/components/ui/spinner"
 import { useToast } from "@/hooks/use-toast"
 import { useEnrollInCourse, useStudentEnrollments } from "@/hooks/use-student-portal"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 export default function EnrollmentRenewalPage() {
+  return (
+    <StudentFeatureGate featureKey="enrollment-renewal">
+      <EnrollmentRenewalPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function EnrollmentRenewalPageInner() {
   const { toast } = useToast()
   const { enrollments, isLoading, error, reload } = useStudentEnrollments()
   const { enroll, isSubmitting, currentCourseId } = useEnrollInCourse()

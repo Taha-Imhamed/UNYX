@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { cancelAppointment, fetchMyAppointments, requestAppointment } from "@/lib/advising-api"
 import { fetchProfessors } from "@/lib/enrollment-api"
 import type { AdvisingAppointment, Professor } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 const statusVariant: Record<AdvisingAppointment["status"], "default" | "secondary" | "outline" | "destructive"> = {
   requested: "secondary",
@@ -20,6 +21,14 @@ const statusVariant: Record<AdvisingAppointment["status"], "default" | "secondar
 }
 
 export default function AdvisingPage() {
+  return (
+    <StudentFeatureGate featureKey="advisor-contact">
+      <AdvisingPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function AdvisingPageInner() {
   const { toast } = useToast()
   const [appointments, setAppointments] = useState<AdvisingAppointment[]>([])
   const [professors, setProfessors] = useState<Professor[]>([])

@@ -34,10 +34,13 @@ import {
   SquareTerminal,
   Sparkles,
   DoorOpen,
+  Bot,
   ServerCog,
   Lock,
   FlaskConical,
   Building2,
+  LifeBuoy,
+  Wifi,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useEffect, useMemo, useState } from "react"
@@ -98,6 +101,17 @@ const navigationSections: NavigationSection[] = [
   {
     title: "Dashboard",
     items: [{ name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roleHome: true }],
+  },
+  {
+    title: "Assistant",
+    items: [
+      {
+        name: "Kino",
+        href: "/dashboard/kino",
+        icon: Bot,
+        allowedRoles: ["admin", "super-admin", "supervisor", "user", "professor", "advisor", "teaching-assistant", "registrar", "admissions", "finance", "it-admin", "dean", "hod", "librarian", "student-affairs", "hr", "security", "facilities", "research-office"],
+      },
+    ],
   },
   {
     title: "Academic Management",
@@ -277,6 +291,12 @@ const navigationSections: NavigationSection[] = [
         icon: ServerCog,
         allowedRoles: ["super-admin"],
       },
+      {
+        name: "IoT Connectors",
+        href: "/dashboard/iot-connectors",
+        icon: Wifi,
+        allowedRoles: ["super-admin"],
+      },
     ],
   },
   {
@@ -286,6 +306,12 @@ const navigationSections: NavigationSection[] = [
         name: "Requests",
         href: "/dashboard/requests",
         icon: WalletCards,
+        allowedRoles: ["admin", "super-admin", "supervisor", "professor", "advisor", "teaching-assistant", "registrar", "admissions", "finance", "it-admin", "dean", "hod", "librarian", "student-affairs", "hr", "security", "facilities", "research-office", "user"],
+      },
+      {
+        name: "Tickets",
+        href: "/dashboard/tickets",
+        icon: LifeBuoy,
         allowedRoles: ["admin", "super-admin", "supervisor", "professor", "advisor", "teaching-assistant", "registrar", "admissions", "finance", "it-admin", "dean", "hod", "librarian", "student-affairs", "hr", "security", "facilities", "research-office", "user"],
       },
     ],

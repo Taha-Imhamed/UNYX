@@ -30,6 +30,7 @@ import {
   ShieldCheck,
   ShieldAlert,
   Sparkles,
+  FlaskConical,
 } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/hooks/use-toast"
@@ -706,6 +707,30 @@ export default function SettingsPage() {
                     </Link>
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {user?.role === "super-admin" && (
+            <Card className="overflow-hidden border-border bg-card">
+              <div className="h-1 w-full bg-gradient-to-r from-sky-500 to-indigo-500" />
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3 text-base">
+                  <SectionIcon icon={FlaskConical} tint="blue" />
+                  System Test
+                </CardTitle>
+                <CardDescription>Run every backend and database connection check, one by one or all at once</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-muted-foreground">
+                  See live pass/fail status and HTTP-style codes for the database, tables, and platform integrations.
+                </p>
+                <Button asChild className="gap-2">
+                  <Link href="/dashboard/system-test">
+                    <FlaskConical className="h-4 w-4" />
+                    Open Test
+                  </Link>
+                </Button>
               </CardContent>
             </Card>
           )}

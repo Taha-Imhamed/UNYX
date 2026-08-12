@@ -1,4 +1,4 @@
-import type { AdvisingAppointment } from "@shared/types"
+import type { AdvisingAppointment, AdvisingMessage } from "@shared/types"
 import { apiFetch } from "./api-client"
 
 export function fetchMyAppointments(signal?: AbortSignal) {
@@ -33,5 +33,17 @@ export function updateAppointmentStatus(id: string, status: AdvisingAppointment[
   return apiFetch<AdvisingAppointment>(`/advising/appointments/${id}`, {
     method: "PUT",
     body: JSON.stringify({ status }),
+  })
+}
+
+export function fetchMyAdvisingMessages(advisorId: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ advisorId })
+  return apiFetch<AdvisingMessage[]>(`/advising/messages/mine?${params.toString()}`, { signal })
+}
+
+export function sendAdvisingMessage(payload: { advisorId: string; body: string }) {
+  return apiFetch<AdvisingMessage>("/advising/messages", {
+    method: "POST",
+    body: JSON.stringify(payload),
   })
 }

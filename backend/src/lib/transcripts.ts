@@ -19,6 +19,7 @@ type TranscriptRow = {
   letterGrade: string | null
   gradeTotal: number | string | null
   semester: string | null
+  semesterSortKey: string | null
   finalizedAt: string | null
   creditHours: number | string | null
   department: string | null
@@ -169,16 +170,26 @@ export async function buildStudentTranscript(studentId: string): Promise<Student
         e.grade,
         e.letter_grade as "letterGrade",
         e.grade_total as "gradeTotal",
-        coalesce(e.semester, substring(e.start_date from 1 for 7), substring(c.start_date from 1 for 7), 'Ungrouped') as semester,
+        coalesce(
+          sem.label,
+          csem.label,
+          e.semester,
+          substring(e.start_date from 1 for 7),
+          substring(c.start_date from 1 for 7),
+          'Ungrouped'
+        ) as semester,
+        coalesce(sem.start_date, csem.start_date) as "semesterSortKey",
         e.grades_finalized_at as "finalizedAt",
         coalesce(c.credit_hours, 3) as "creditHours",
         c.department
       from public.enrollments e
       inner join public.students s on s.id = e.student_id
       left join public.courses c on c.id = e.course_id
+      left join public.semesters sem on sem.id = e.semester_id
+      left join public.semesters csem on csem.id = c.semester_id
       where e.student_id = $1
         and coalesce(e.is_finalized, false) = true
-      order by semester asc, "courseCode" asc, e.id asc
+      order by "semesterSortKey" asc nulls last, semester asc, "courseCode" asc, e.id asc
     `,
     [studentId],
   )

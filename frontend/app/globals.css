@@ -68,7 +68,7 @@ html {
   --warning: #3b4f60;
   --glow-primary: color-mix(in oklab, var(--primary) 38%, transparent);
   --glow-accent: color-mix(in oklab, var(--tertiary) 34%, transparent);
-  --menu-color: #0f1c40;
+  --menu-color: #2a4a8c;
   --menu-foreground: #eef2fb;
   --menu-foreground-muted: color-mix(in oklab, var(--menu-foreground) 62%, var(--menu-color) 38%);
 }
@@ -112,7 +112,7 @@ html {
   --warning: #3b4f60;
   --glow-primary: color-mix(in oklab, var(--primary) 38%, transparent);
   --glow-accent: color-mix(in oklab, var(--tertiary) 34%, transparent);
-  --menu-color: #05070d;
+  --menu-color: #1c3566;
   --menu-foreground: #eef2fb;
   --menu-foreground-muted: color-mix(in oklab, var(--menu-foreground) 62%, var(--menu-color) 38%);
 }

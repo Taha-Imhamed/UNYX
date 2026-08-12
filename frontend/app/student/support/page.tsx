@@ -13,11 +13,20 @@ import { Star } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { createFeedback, fetchFeedback } from "@/lib/feedback-api"
 import type { Feedback } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 const typeOptions: Feedback["type"][] = ["course", "professor", "facility", "general"]
 const priorities: Array<NonNullable<Feedback["priority"]>> = ["low", "normal", "high"]
 
 export default function StudentSupportPage() {
+  return (
+    <StudentFeatureGate featureKey="support">
+      <StudentSupportPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function StudentSupportPageInner() {
   const { toast } = useToast()
   const [subject, setSubject] = useState("")
   const [message, setMessage] = useState("")

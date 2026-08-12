@@ -15,6 +15,7 @@ import { fetchProfessors } from "@/lib/professor-api"
 import { useFocusVisibilityRefresh } from "@/hooks/use-focus-visibility-refresh"
 import { useAuth } from "@/lib/auth-context"
 import type { Professor, Student } from "@shared/types"
+import { deriveStudentYearLevel } from "@/lib/academic-terms"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,9 +50,8 @@ function TiltCard({ className, children }: { className?: string; children: React
 }
 
 function formatStudentYear(student: Student) {
-  if (Number.isFinite(Number(student.currentYear)) && Number(student.currentYear) > 0) {
-    return `Year ${Math.floor(Number(student.currentYear))}`
-  }
+  const yearLevel = deriveStudentYearLevel(student)
+  if (yearLevel) return `Year ${yearLevel}`
   if (typeof student.currentSemester === "string" && student.currentSemester.trim()) {
     return student.currentSemester.trim()
   }
@@ -179,7 +179,7 @@ export default function StudentsPage() {
   const isAdminLike = user?.role === "admin" || user?.role === "super-admin" || user?.role === "supervisor"
   const isAdvisorUser = user?.role === "advisor" && Boolean(user.professorId)
   const canCreateOrDeleteStudents = !!user && !isFinanceUser && isAdminLike
-  const canEditStudents = !!user && !isFinanceUser && (isAdminLike || isAdvisorUser)
+  const canEditStudents = !!user && (isAdminLike || isAdvisorUser || isFinanceUser)
 
   useEffect(() => {
     if (authLoading) return
@@ -379,7 +379,8 @@ export default function StudentsPage() {
     }
   }
 
-  const canEditStudentRecord = (student: Student) => canEditStudents && (isAdminLike || student.supervisorId === user?.professorId)
+  const canEditStudentRecord = (student: Student) =>
+    canEditStudents && (isAdminLike || isFinanceUser || student.supervisorId === user?.professorId)
 
   const columns = [
     {
@@ -431,12 +432,7 @@ export default function StudentsPage() {
     const [academicStructure, setAcademicStructure] = useState<AcademicStructure | null>(null)
     const [programValue, setProgramValue] = useState<string>(student?.program ?? "Computer Science")
     const [majorValue, setMajorValue] = useState<string>((student?.major as string | undefined) ?? "")
-    const initialYearValue =
-      Number.isFinite(Number(student?.currentYear)) && Number(student?.currentYear) > 0
-        ? String(Math.floor(Number(student?.currentYear)))
-        : typeof student?.currentSemester === "string"
-          ? student.currentSemester.match(/(\d+)/)?.[1] ?? "1"
-          : "1"
+    const initialYearValue = String(deriveStudentYearLevel(student) ?? 1)
     const [yearValue, setYearValue] = useState<string>(initialYearValue)
     const [statusValue, setStatusValue] = useState<Student["status"]>(student?.status ?? "active")
     const availablePrograms = useMemo(() => {
@@ -483,13 +479,7 @@ export default function StudentsPage() {
       setFileName("")
       setProgramValue(student?.program ?? "Computer Science")
       setMajorValue((student?.major as string | undefined) ?? "")
-      setYearValue(
-        Number.isFinite(Number(student?.currentYear)) && Number(student?.currentYear) > 0
-          ? String(Math.floor(Number(student?.currentYear)))
-          : typeof student?.currentSemester === "string"
-            ? student.currentSemester.match(/(\d+)/)?.[1] ?? "1"
-            : "1",
-      )
+      setYearValue(String(deriveStudentYearLevel(student) ?? 1))
       setStatusValue(student?.status ?? "active")
       setSupervisorValue(student?.supervisorId ?? "none")
       if (fileInputRef.current) {

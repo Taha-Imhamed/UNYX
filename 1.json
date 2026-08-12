@@ -1,52 +1,30 @@
-1. Admin password reset stores plaintext. backend/routes/users.ts:1646 — POST /:id/password/admin writes newPassword straight to DB with no bcrypt.hash. Every other password path (login, self-service, register) hashes correctly; this one doesn't. Any admin-reset account has a plaintext password sitting in Postgres until next login rehashes it (self-service change does trigger rehash on next login for the other path, but this one may not even get read as legacy — check).
-  2. No CI pipeline at all. Nothing runs tests, typecheck, or lint on push/PR. Broken builds only get caught if someone runs it manually.
-  3. Zero test coverage on payments, finance, grading, admissions. These are the routes where a silent bug costs real money or a wrong grade. One payment happy-path test exists; nothing else.
+{
+  "name": "software-project-main",
+  "private": true,
+  "for 
+  data_/// app.console
+  "version run - 0.001
+  ip_address == 192.168.100.222 
+  //tmade by taha imhamed 
+  //the server keys will be giveng there in the office 
+  // the internal server ip address is here v192.168.100.222   take it and make the v1 and the v2 till v 0.23 
+  //with the app 
+  "
+  "version": "1.0.0",
+  "scripts": {
+    "predev": "node scripts/bootstrap-dev.mjs",
+    "setup": "npm install --prefix backend && npm install --prefix frontend --legacy-peer-deps",
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "build": "npm run build --prefix backend && npm run build --prefix frontend",
+    "start": "concurrently -n backend,frontend -c blue,green \"npm run start --prefix backend\" \"npm run start --prefix frontend\"",
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
+ 
 
-  🟠 Security hardening
 
-  4. Rate limiting only on /auth/login (in-memory, resets on restart, doesn't share across instances). Nothing on , or any other endpoint.
-  5. Audit logging (writeAuditLog) is used in enrollments.ts, grade-change-requests.professor-workspace.ts — but ns, registrar.ts, it-admin.ts,security.ts, income.ts, expenses.ts. Financial approvals and role changes leave no6. File "uploads" (professor mLs stored directly in Postgresrows, with only a client-reported size field — no server-side MIME/size/type valid7. zod is a dependency but onls. enrollments.ts, payments.ts, students.ts, grade-change-requests.ts, admissions.ts have no schema validation at all.
-  8. CORS has an ALLOW_ALL_CORS=1 escape hatch and accepts any origin whenever NODE_'production' — fine for dev, bset NODE_ENV=production iswide open.
-                                                                                    🟡 Data & infrastructure gaps
 
-  9. No real migration system. migrations/ has 5 dated one-off .sql files, no runnerversion table, no up/down. Pluch files sitting at repo rootoutside any structure.
-  10. Hard deletes everywhere — no soft-delete/trash/recovery pattern. A misclick   permanently destroys data.
-  11. Pagination only exists on enrollments.ts and payments.ts. Students, professors, users, news, and everything else return full unpaginated result sets — will fall oreal scale.
-  12. No background job/queue system, no caching layer, no full-text search, no API versioning.
-  13. No email/SMS integration anywhere — "notifications" are in-app/DB only. A student never gets an actual email for grade posted, payment due, enrollment approved, etc.
-  14. No cloud file storage (S3/cluding materials) lives astext in Postgres.
-
-  🟢 Missing student-portal features
-
-  15. "Message" nav item is liteorm, not a real inbox/threadedmessaging.
-  16. "Document Request" nav iteform — no request-type picker,no status tracking.
-  17. "Payment Plan", "Departmenwal" pages are byte-for-bytere-exports of billing/enroll — three sidebar promises, one actual page each.
-  18. No degree-audit / graduation-progress tracker (just raw grade list + GPA).
-  19. No what-if GPA calculator.
-  20. No course catalog search/filter on the enroll page — just a flat list.
-  21. No financial aid / scholarship line items on billing (balance/charges only).
-  22. No library integration, no campus events/calendar, no housing/meal-plan module — none of these exist anywhere in the codebase.
-  23. No academic-advising appoiage just shows contact info).
-  24. No notification bell / inbox center anywhere in student UI.
-  25. No dark mode toggle exposew has full theming from earlier session — students don't).
-  26. No 2FA/MFA option on stude
-  27. No rate-my-professor / course review aggregate view.
-  28. Student sidebar has no visible mobile-drawer pattern — likely breaks on small
-  screens.
-
-  🔵 Missing admin/ops features
-
-  29. No dedicated frontend for it-admin.ts device-logs beyond a count tile — no list/search UI.
-  30. HR role has no real HR mod — dashboard tiles justredirect to Users/Finance.
-  31. Librarian role has no real library module (book inventory/catalog/loans) — tiles
-  redirect to News.
-  32. No health-check DB-connectivity check (/api/health returns OK without touching Postgres).
-  33. No structured logging (191or calls in backend, nowinston/pino).
-  34. No error tracking (no Sentry or equivalent).
-  35. No .env.example — a new dehas to reverse-engineerrequired keys from source.
-
-  ⚪ Code health
-
-  36. next.config.mjs has typescrue } — production buildssucceed even with type errors, undermining the value of tsc --noEmit passing clean.
-  37. No ESLint config file exists in either frontend/ or backend/ despite both having a lint script and eslint installday would just error out.
-  38. ~32 any/as any usages concentrated in app/dashboard/users, app/student/enroll, app/dashboard/enrollment/schedule. how ma

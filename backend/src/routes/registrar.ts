@@ -11,7 +11,9 @@ import {
 } from '../data/collections.js'
 import { getCollection } from '../db/postgres.js'
 import type { Enrollment, EnrollmentOverride, GraduationApproval, TranscriptRequest, TransferCredit } from '../../../shared/types/index.js'
-import { enrollmentActorPatch, writeAuditLog } from '../lib/academic-compliance.js'
+import { checkBalance, enrollmentActorPatch, writeAuditLog } from '../lib/academic-compliance.js'
+import { createTuitionInvoiceForEnrollment } from './finance.js'
+import { getSemesterById } from '../lib/academic-terms.js'
 import { logger } from '../lib/logger.js'
 
 export const registrarRoutes: ReturnType<typeof Router> = Router()
@@ -90,6 +92,118 @@ registrarRoutes.post('/enrollment-overrides', async (req, res) => {
   } catch (error) {
     logger.error({ err: error }, 'Failed to create enrollment override')
     res.status(500).json({ success: false, error: 'Failed to create enrollment override' })
+  }
+})
+
+// Registrar's own scope: finalize a student's pending course enrollment and auto-bill
+// tuition through Finance, without granting registrar any finance:* permission. Narrower
+// than canAccessRegistrar() — it:'s the person whose job this is, plus admin/super-admin
+// oversight. it-admin and supervisor are intentionally excluded here.
+function canRegisterStudents(role?: string) {
+  return role === 'admin' || role === 'super-admin' || role === 'registrar'
+}
+
+const PENDING_REGISTRATION_STATUSES = new Set(['pending', 'pending_approval', 'pendingAdvisorApproval', 'pendingSupervisorApproval'])
+
+registrarRoutes.get('/pending-registrations', async (req, res) => {
+  try {
+    if (!canRegisterStudents(req.auth?.role)) {
+      return res.status(403).json({ success: false, error: 'Registrar access required' })
+    }
+    const enrollmentsCol = await enrollmentsCollection()
+    const all = await enrollmentsCol.find().sort({ createdAt: -1 }).toArray()
+    const pending = all.filter((enrollment) => PENDING_REGISTRATION_STATUSES.has(enrollment.status))
+    res.json({ success: true, data: pending })
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to fetch pending registrations')
+    res.status(500).json({ success: false, error: 'Failed to fetch pending registrations' })
+  }
+})
+
+registrarRoutes.post('/enrollments/:id/register', async (req, res) => {
+  try {
+    if (!canRegisterStudents(req.auth?.role)) {
+      return res.status(403).json({ success: false, error: 'Registrar access required' })
+    }
+
+    const enrollmentsCol = await enrollmentsCollection()
+    const studentsCol = await studentsCollection()
+
+    const enrollment = await enrollmentsCol.findOne({ id: req.params.id })
+    if (!enrollment) {
+      return res.status(404).json({ success: false, error: 'Enrollment not found' })
+    }
+    if (!PENDING_REGISTRATION_STATUSES.has(enrollment.status)) {
+      return res.status(409).json({ success: false, error: 'Only pending enrollments can be registered' })
+    }
+
+    const student = await studentsCol.findOne({ id: enrollment.studentId })
+    if (!student) {
+      return res.status(404).json({ success: false, error: 'Student not found' })
+    }
+
+    const registrarLabel = req.auth?.username ?? req.auth?.userId ?? 'registrar'
+    const price = Number(enrollment.price ?? 0)
+
+    if (price > 0) {
+      const resolvedSemester = await getSemesterById(enrollment.semesterId)
+      await createTuitionInvoiceForEnrollment({
+        studentId: student.id,
+        courseTitle: enrollment.courseTitle,
+        price,
+        semester: resolvedSemester?.label ?? enrollment.semester ?? null,
+        semesterId: enrollment.semesterId ?? null,
+        createdBy: registrarLabel,
+      })
+    }
+
+    const updatedAt = new Date().toISOString()
+    const clearance = await checkBalance(student.id, 0)
+
+    await enrollmentsCol.updateOne(
+      { id: enrollment.id },
+      {
+        $set: {
+          status: 'active',
+          updatedAt,
+          tuitionCharged: price > 0,
+          chargedAt: price > 0 ? updatedAt : enrollment.chargedAt ?? null,
+          paymentVerified: clearance.cleared,
+          paymentStatus: clearance.cleared ? 'paid' : 'payment_required',
+          approvedByUserId: req.auth?.userId ?? null,
+          approvedByName: req.auth?.username ?? null,
+          approvedByRole: req.auth?.role ?? null,
+          approvedAt: updatedAt,
+          ...enrollmentActorPatch(req.auth),
+          rejectedByUserId: null,
+          rejectedByName: null,
+          rejectedByRole: null,
+          rejectedAt: null,
+        },
+      },
+    )
+
+    const updated = await enrollmentsCol.findOne({ id: enrollment.id })
+    await notifyStudent(
+      student.id,
+      `Registration complete: ${enrollment.courseTitle}`,
+      price > 0
+        ? `You have been registered by the Registrar's Office. A tuition invoice of ${price} has been created — check Finance for your payment status.`
+        : `You have been registered by the Registrar's Office.`,
+      registrarLabel,
+    )
+    await writeAuditLog({
+      action: 'registrar_student_registered',
+      entityType: 'enrollment',
+      entityId: enrollment.id,
+      details: { studentId: student.id, courseId: enrollment.courseId, price, paymentStatus: updated?.paymentStatus },
+      auth: req.auth,
+    })
+
+    res.json({ success: true, data: updated })
+  } catch (error) {
+    logger.error({ err: error }, 'Failed to register student')
+    res.status(500).json({ success: false, error: 'Failed to register student' })
   }
 })
 

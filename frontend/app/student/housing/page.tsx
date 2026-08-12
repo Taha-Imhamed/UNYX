@@ -6,8 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Spinner } from "@/components/ui/spinner"
 import { fetchMyHousing, fetchMyMealPlan } from "@/lib/campus-api"
 import type { HousingAssignment, MealPlan } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 export default function HousingPage() {
+  return (
+    <StudentFeatureGate featureKey="housing">
+      <HousingPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function HousingPageInner() {
   const [housing, setHousing] = useState<HousingAssignment[]>([])
   const [mealPlans, setMealPlans] = useState<MealPlan[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -56,7 +65,7 @@ export default function HousingPage() {
                 <p className="text-sm text-muted-foreground">No housing assignment on file. Contact Student Affairs to request campus housing.</p>
               ) : (
                 housing.map((assignment) => (
-                  <div key={assignment.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3">
+                  <div key={assignment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 p-3">
                     <div>
                       <p className="text-sm font-semibold text-foreground">
                         {assignment.buildingName} — Room {assignment.roomNumber}
@@ -84,7 +93,7 @@ export default function HousingPage() {
                 <p className="text-sm text-muted-foreground">No meal plan on file. Contact Student Affairs to enroll.</p>
               ) : (
                 mealPlans.map((plan) => (
-                  <div key={plan.id} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 p-3">
+                  <div key={plan.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 p-3">
                     <div>
                       <p className="text-sm font-semibold text-foreground">{plan.planName}</p>
                       <p className="text-xs text-muted-foreground">

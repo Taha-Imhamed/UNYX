@@ -14,6 +14,35 @@ import { Label } from "@/components/ui/label"
 import appLogo from "../../Logos-01.png"
 import loginSideImage from "../../main-campus.jpg"
 
+const QUICK_LOGIN_USERS = [
+  "supervisor_sara",
+  "superadmin.luan",
+  "finance.elira",
+  "admin23",
+  "studaff.keti",
+  "admissions.era",
+  "advisor.omer",
+  "security.dani",
+  "facilities.rina",
+  "dean.petra",
+  "it.bora",
+  "ta.noel",
+  "registrar.rei",
+  "hod.cs",
+  "hod.ds",
+  "hod.biz",
+  "library.riela",
+  "hr.gerta",
+  "taha",
+  "anasprof",
+  "memo",
+  "anas",
+  "test1",
+  "student1",
+  "test2y",
+]
+const QUICK_LOGIN_PASSWORD = "Test@1234"
+
 export default function LoginPage() {
   const router = useRouter()
   const { login, user, isLoading } = useAuth()
@@ -28,50 +57,17 @@ export default function LoginPage() {
     if (typeof window === "undefined") return ""
     return localStorage.getItem("ar_company_username") ?? ""
   })
-  const [failedAttempts, setFailedAttempts] = useState(0)
-  const [blockCount, setBlockCount] = useState(0)
-  const [blockedUntil, setBlockedUntil] = useState<Date | null>(null)
-  const [countdown, setCountdown] = useState(0)
+  const [password, setPassword] = useState("")
   const [forgotMessage, setForgotMessage] = useState("")
   const [mfaStep, setMfaStep] = useState(false)
   const [mfaCode, setMfaCode] = useState("")
   const [pendingCredentials, setPendingCredentials] = useState<{ username: string; password: string } | null>(null)
-
-  const isBlocked = blockedUntil !== null && blockedUntil.getTime() > Date.now()
 
   useEffect(() => {
     if (!isLoading && user) {
       router.push(user.role === "student" ? "/student" : "/dashboard")
     }
   }, [user, isLoading, router])
-
-  useEffect(() => {
-    if (!blockedUntil) {
-      setCountdown(0)
-      return
-    }
-
-    const updateCountdown = () => {
-      const remainingMs = blockedUntil.getTime() - Date.now()
-      if (remainingMs <= 0) {
-        setCountdown(0)
-        setBlockedUntil(null)
-        setError("")
-        return
-      }
-
-      const remainingSeconds = Math.ceil(remainingMs / 1000)
-      setCountdown(remainingSeconds)
-      const remainingMinutes = Math.ceil(remainingSeconds / 60)
-      setError(
-        `Too many attempts. Try again in ${remainingMinutes} minute${remainingMinutes > 1 ? "s" : ""} (${remainingSeconds}s remaining).`,
-      )
-    }
-
-    updateCountdown()
-    const interval = window.setInterval(updateCountdown, 1000)
-    return () => window.clearInterval(interval)
-  }, [blockedUntil])
 
   useEffect(() => {
     try {
@@ -87,11 +83,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-
-    if (isBlocked) {
-      setError(`Too many attempts. Try again in ${countdown} second${countdown !== 1 ? "s" : ""}.`)
-      return
-    }
 
     setIsSubmitting(true)
     setError("")
@@ -122,9 +113,6 @@ export default function LoginPage() {
     const result = await login(currentUsername, password, rememberMe, mfaStep ? mfaCode : undefined)
 
     if (result === "success") {
-      setFailedAttempts(0)
-      setBlockCount(0)
-      setBlockedUntil(null)
       setIsSubmitting(false)
       return
     }
@@ -143,19 +131,7 @@ export default function LoginPage() {
       return
     }
 
-    const nextAttempts = failedAttempts + 1
-    setFailedAttempts(nextAttempts)
-
-    if (nextAttempts >= 3) {
-      const blockMinutes = Math.min(5 * (blockCount + 1), 30)
-      setBlockedUntil(new Date(Date.now() + blockMinutes * 60 * 1000))
-      setBlockCount(blockCount + 1)
-      setFailedAttempts(0)
-      setError(`Too many attempts. Try again in ${blockMinutes} minute${blockMinutes > 1 ? "s" : ""}.`)
-    } else {
-      setError("Invalid credentials. Please try again.")
-    }
-
+    setError("Invalid credentials. Please try again.")
     setIsSubmitting(false)
   }
 
@@ -344,6 +320,8 @@ export default function LoginPage() {
                             id="password"
                             name="password"
                             type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(event) => setPassword(event.target.value)}
                             placeholder="Enter your password"
                             autoComplete="current-password"
                             required
@@ -356,6 +334,24 @@ export default function LoginPage() {
                           >
                             {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                           </button>
+                        </div>
+                      </div>
+                      <div className="space-y-2 pt-1">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-white/50">Quick fill (dev)</p>
+                        <div className="flex flex-wrap gap-2">
+                          {QUICK_LOGIN_USERS.map((quickUsername) => (
+                            <button
+                              key={quickUsername}
+                              type="button"
+                              onClick={() => {
+                                setUsername(quickUsername)
+                                setPassword(QUICK_LOGIN_PASSWORD)
+                              }}
+                              className="rounded-full border border-white/14 bg-white/8 px-3 py-1 text-xs text-white/74 transition-colors hover:border-[#e5c277]/50 hover:text-[#e5c277]"
+                            >
+                              {quickUsername}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </>
@@ -406,12 +402,6 @@ export default function LoginPage() {
                     </div>
                   )}
 
-                  {isBlocked && countdown > 0 && (
-                    <p className="text-sm text-white/62">
-                      Attempts temporarily disabled for {countdown} second{countdown !== 1 ? "s" : ""}.
-                    </p>
-                  )}
-
                   {forgotMessage && (
                     <div className="rounded-[18px] border border-[#d5ab54]/20 bg-[#d5ab54]/10 px-4 py-3 text-sm text-white/84">
                       {forgotMessage}
@@ -421,7 +411,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     className="mt-2 h-12 w-full rounded-[18px] bg-[linear-gradient(135deg,#d5ab54_0%,#b78830_100%)] text-base font-semibold text-[#07131d] shadow-[0_20px_40px_-22px_rgba(213,171,84,0.55)] hover:brightness-105"
-                    disabled={isSubmitting || isBlocked}
+                    disabled={isSubmitting}
                   >
                     {isSubmitting ? "Signing in..." : mfaStep ? "Verify code" : "Login"}
                   </Button>

@@ -25,12 +25,20 @@ export interface Student extends Record<string, unknown> {
   motherName?: string
   fatherName?: string
   currentSemester?: string
+  /** @deprecated Use `yearLevel` — this field mixed year-level and term meanings. Kept for backward-compat reads only. */
+  currentYear?: number | null
+  yearLevel?: number | null
   status: "active" | "inactive" | "graduated" | "deleted"
   address: string
   dateOfBirth: string
   balance: number
   supervisorId?: string
   supervisorName?: string
+  notificationPreferences?: {
+    email?: boolean
+    sms?: boolean
+    push?: boolean
+  }
 }
 
 export interface StudentHint {
@@ -136,6 +144,7 @@ export interface FinanceInvoice extends Record<string, unknown> {
   studentDisplayId?: string | null
   title: string
   semester?: string | null
+  semesterId?: string | null
   issueDate: string
   dueDate: string
   status: "draft" | "open" | "partially-paid" | "paid" | "cancelled"
@@ -235,6 +244,52 @@ export interface FinanceRequest extends Record<string, unknown> {
   financeNotes?: string | null
   createdAt: string
   updatedAt: string
+}
+
+// Curated support-desk destinations a ticket can be routed to. Distinct from SystemRole so
+// the opener picks from a short, human list instead of all 20 raw roles; TICKET_DEPARTMENT_ROLES
+// (backend/src/lib/ticket-departments.ts) maps each one to the staff role(s) that see it.
+export type TicketDepartment =
+  | "it"
+  | "admin"
+  | "finance"
+  | "academic"
+  | "facilities"
+  | "hr"
+  | "security"
+  | "library"
+  | "research"
+
+export type TicketCategory = "technical" | "account-access" | "academic" | "billing" | "facility" | "other"
+
+export type TicketStatus = "open" | "in-progress" | "resolved" | "closed"
+
+export interface TicketReply extends Record<string, unknown> {
+  id: string
+  ticketId: string
+  authorId: string
+  authorName: string
+  authorRole: SystemRole
+  body: string
+  createdAt: string
+}
+
+export interface SupportTicket extends Record<string, unknown> {
+  id: string
+  ticketNumber: string
+  requesterId: string
+  requesterName: string
+  requesterRole: SystemRole
+  department: TicketDepartment
+  category: TicketCategory
+  subject: string
+  description: string
+  status: TicketStatus
+  createdAt: string
+  updatedAt: string
+  closedAt?: string | null
+  lastReplyAt?: string | null
+  lastReplyByRole?: SystemRole | null
 }
 
 export interface Feedback extends Record<string, unknown> {
@@ -388,6 +443,7 @@ export interface Course extends Record<string, unknown> {
   eligiblePrograms?: string[]
   eligibleFaculties?: string[]
   eligibleSemesters?: string[]
+  semesterId?: string | null
   prerequisiteCourseIds?: string[]
   creditHours?: number
   courseType?: CourseType
@@ -397,6 +453,19 @@ export interface Course extends Record<string, unknown> {
   enrollmentOpenAt?: string | null
   enrollmentCloseAt?: string | null
   enrollmentStatusNote?: string | null
+}
+
+export type SemesterStatus = "upcoming" | "active" | "closed"
+
+export interface Semester extends Record<string, unknown> {
+  id: string
+  label: string
+  academicYear: string
+  startDate: string
+  endDate: string
+  status: SemesterStatus
+  createdAt: string
+  updatedAt: string
 }
 
 export interface AcademicDepartment {
@@ -467,6 +536,7 @@ export interface Enrollment extends Record<string, unknown> {
   gradesFinalizedAt?: string | null
   gradesFinalizedBy?: string | null
   semester?: string | null
+  semesterId?: string | null
   tuitionCharged?: boolean
   chargedAt?: string | null
   paymentVerified?: boolean
@@ -909,6 +979,17 @@ export interface AdvisingAppointment extends Record<string, unknown> {
   updatedAt: string
 }
 
+export interface AdvisingMessage extends Record<string, unknown> {
+  id: string
+  studentId: string
+  advisorId: string
+  senderRole: 'student' | 'advisor'
+  senderName: string
+  body: string
+  readAt?: string | null
+  createdAt: string
+}
+
 export interface CourseReview extends Record<string, unknown> {
   id: string
   courseId: string
@@ -1054,6 +1135,44 @@ export interface OfferLetter extends Record<string, unknown> {
   notes?: string | null
 }
 
+export interface AiConversation extends Record<string, unknown> {
+  id: string
+  userId: string
+  userRole: SystemRole
+  title?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AiToolCallSummary extends Record<string, unknown> {
+  id: string
+  toolName: string
+  input: Record<string, unknown>
+  status: 'pending' | 'executed' | 'cancelled'
+}
+
+export interface AiMessage extends Record<string, unknown> {
+  id: string
+  conversationId: string
+  role: 'user' | 'assistant' | 'tool_result'
+  content: string
+  toolCalls?: AiToolCallSummary[] | null
+  createdAt: string
+}
+
+export interface AiPendingAction extends Record<string, unknown> {
+  id: string
+  conversationId: string
+  toolName: string
+  input: Record<string, unknown>
+  status: 'pending' | 'executed' | 'cancelled'
+  createdBy: string
+  createdAt: string
+  executedAt?: string | null
+  resultSummary?: string | null
+  resultEntityId?: string | null
+}
+
 export interface ApiResponse<T> {
   success: boolean
   data?: T
@@ -1101,6 +1220,7 @@ export type Permission =
   | "enrollment:self"
   | "enrollment:override-window"
   | "enrollment:override-capacity"
+  | "enrollment:register"
   | "override_capacity"
   | "ENTER_GRADES"
   | "edit_own_grades"
@@ -1119,6 +1239,10 @@ export type Permission =
   | "settings:security"
   | "settings:integrations"
   | "settings:sso"
+  | "academic:approve"
+  | "graduation:approve"
+  | "professors:manage"
+  | "hod:oversight"
 
 export interface Question extends Record<string, unknown> {
   id: string

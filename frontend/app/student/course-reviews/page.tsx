@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useStudentEnrollments } from "@/hooks/use-student-portal"
 import { fetchMyReviews, submitReview } from "@/lib/course-reviews-api"
 import type { CourseReview } from "@shared/types"
+import { StudentFeatureGate } from "@/components/student-feature-gate"
 
 function StarPicker({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   return (
@@ -25,6 +26,14 @@ function StarPicker({ value, onChange }: { value: number; onChange: (value: numb
 }
 
 export default function CourseReviewsPage() {
+  return (
+    <StudentFeatureGate featureKey="course-reviews">
+      <CourseReviewsPageInner />
+    </StudentFeatureGate>
+  )
+}
+
+function CourseReviewsPageInner() {
   const { toast } = useToast()
   const { enrollments, isLoading: enrollmentsLoading } = useStudentEnrollments()
   const [reviews, setReviews] = useState<CourseReview[]>([])
@@ -114,14 +123,14 @@ export default function CourseReviewsPage() {
           return (
             <Card key={enrollment.courseId} className="border border-border bg-card">
               <CardHeader>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <CardTitle className="text-base">{enrollment.courseTitle}</CardTitle>
                   {reviewedCourseIds.has(enrollment.courseId) && <Badge variant="outline">Reviewed</Badge>}
                 </div>
                 <CardDescription>{enrollment.courseCode} • {enrollment.professorName ?? "Unknown professor"}</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="flex items-center gap-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6">
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">Rating</p>
                     <StarPicker value={draft.rating} onChange={(v) => setDraft(enrollment.courseId, { rating: v })} />

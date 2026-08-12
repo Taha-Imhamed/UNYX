@@ -20,54 +20,26 @@ import {
 } from "@/hooks/use-student-portal"
 import { previewStudentSchedule } from "@/lib/students-api"
 import { cancelSelfEnrollment } from "@/lib/students-api"
+import { fetchWaitlistPosition } from "@/lib/enrollment-api"
+import { deriveStudentYearLevel } from "@/lib/academic-terms"
 import { CalendarClock, CheckCircle2, GraduationCap, Lock, Trash2, XCircle } from "lucide-react"
 import type { CourseAvailability, CourseScheduleEntry, Enrollment, EnrollmentStatus, Student } from "@shared/types"
 import { StudentFeatureGate } from "@/components/student-feature-gate"
 
-function normalizeToken(value?: string | null) {
-  return (value ?? "").trim().toLowerCase()
-}
-
-function deriveAcademicYear(currentSemester?: string | null, enrollmentDate?: string | null) {
-  const yearMatch = currentSemester?.match(/^(?:year\s*)?(\d+)$/i)
-  if (yearMatch) return { year: Number(yearMatch[1]), semesterNumber: null, label: `Year ${Number(yearMatch[1])}` }
-
-  const semesterToken = normalizeToken(currentSemester)
-  const semesterMatch = semesterToken.match(/(\d+)/)
-  if (semesterMatch) {
-    const semesterNumber = Number(semesterMatch[1])
-    if (Number.isFinite(semesterNumber) && semesterNumber > 0) {
-      const year = Math.ceil(semesterNumber / 2)
-      return { year, semesterNumber, label: `Year ${year}` }
-    }
-  }
+function deriveAcademicYear(student: Pick<Student, "yearLevel" | "currentYear" | "currentSemester"> | null | undefined, enrollmentDate?: string | null) {
+  const yearLevel = deriveStudentYearLevel(student)
+  if (yearLevel) return { year: yearLevel, label: `Year ${yearLevel}` }
 
   if (enrollmentDate) {
     const start = new Date(enrollmentDate)
     if (!Number.isNaN(start.getTime())) {
       const now = new Date()
       const years = Math.max(1, now.getFullYear() - start.getFullYear() + 1)
-      return { year: years, semesterNumber: null, label: `Year ${years}` }
+      return { year: years, label: `Year ${years}` }
     }
   }
 
-  return { year: null, semesterNumber: null, label: "Year not set" }
-}
-
-function matchesStudentSemester(course: CourseAvailability, semesterNumber: number | null, yearNumber: number | null) {
-  const eligible = Array.isArray(course?.eligibleSemesters)
-    ? course.eligibleSemesters.map((value: unknown) => normalizeToken(String(value))).filter(Boolean)
-    : []
-
-  if (eligible.length === 0) return true
-  return eligible.some((value) => {
-    if (yearNumber !== null && (value === `year ${yearNumber}` || value.includes(`year ${yearNumber}`))) return true
-    if (semesterNumber === null) return false
-    if (value === String(semesterNumber)) return true
-    if (value.includes(`semester ${semesterNumber}`)) return true
-    if (value.includes(`sem ${semesterNumber}`)) return true
-    return false
-  })
+  return { year: null, label: "Year not set" }
 }
 
 function formatDateRange(start?: string, end?: string) {
@@ -75,6 +47,34 @@ function formatDateRange(start?: string, end?: string) {
   if (!start) return `Until ${end}`
   if (!end) return `From ${start}`
   return `${new Date(start).toLocaleDateString()} - ${new Date(end).toLocaleDateString()}`
+}
+
+function WaitlistPositionNote({ enrollmentId }: { enrollmentId: string }) {
+  const [position, setPosition] = useState<number | null>(null)
+  const [total, setTotal] = useState<number | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetchWaitlistPosition(enrollmentId, controller.signal)
+      .then((data) => {
+        setPosition(data.position)
+        setTotal(data.totalWaitlisted)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setPosition(null)
+          setTotal(null)
+        }
+      })
+    return () => controller.abort()
+  }, [enrollmentId])
+
+  if (position === null) return null
+  return (
+    <p className="text-xs text-muted-foreground">
+      Waitlist position {position} of {total}
+    </p>
+  )
 }
 
 export default function StudentEnrollPage() {
@@ -116,14 +116,7 @@ function StudentEnrollPageInner() {
   const lastPreviewId = useRef(0)
   const MAX_COURSES_PER_TERM = 5
 
-  const yearInfo = useMemo(() => {
-    const studentWithYear = profile as (Student & { currentYear?: string | number }) | null
-    if (studentWithYear?.currentYear) {
-      const year = Number(studentWithYear.currentYear)
-      return { year, semesterNumber: null, label: `Year ${year}` }
-    }
-    return deriveAcademicYear(profile?.currentSemester, profile?.enrollmentDate)
-  }, [profile])
+  const yearInfo = useMemo(() => deriveAcademicYear(profile, profile?.enrollmentDate), [profile])
 
   const balance = Number(financials?.balance ?? profile?.balance ?? 0)
   const isFullyPaid = Number.isFinite(balance) ? balance <= 0 : false
@@ -523,8 +516,15 @@ function StudentEnrollPageInner() {
                                 ? "Pending Advisor"
                                 : enrollment.status === "pending_approval"
                                   ? "Pending Payment"
-                                  : enrollment.status}
+                                  : enrollment.status === "waitlisted"
+                                    ? "Waitlisted"
+                                    : enrollment.status}
                           </Badge>
+                          {enrollment.status === "waitlisted" && (
+                            <StudentFeatureGate featureKey="waitlist-status">
+                              <WaitlistPositionNote enrollmentId={enrollment.id} />
+                            </StudentFeatureGate>
+                          )}
                           {canCancel && (
                             <StudentFeatureGate featureKey="drop-withdraw">
                               <Button

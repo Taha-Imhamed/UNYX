@@ -481,7 +481,7 @@ export function AdminSidebar() {
       <div className="flex items-center justify-between px-4 py-[18px]">
         {!collapsed && (
           <Link href={homeHref} className="min-w-0">
-            <span className="block truncate text-[11px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--menu-foreground)" }}>Admin Menu</span>
+            <span className="block truncate text-[11px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--menu-foreground)" }}>{roleLabel} Menu</span>
             <p className="text-[11px] uppercase tracking-[0.1em]" style={{ color: "var(--menu-foreground-muted)" }}>UNYT Portal</p>
           </Link>
         )}

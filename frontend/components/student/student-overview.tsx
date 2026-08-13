@@ -96,14 +96,16 @@ export function StudentOverviewPage() {
 
   const balanceStatus = financials?.balance ?? profile?.balance ?? 0
   const fullyPaid = Number(balanceStatus) <= 0
-  const enrollmentOpen = enrollmentWindow?.enrollmentOpen !== false
+  const enrollmentOpen = enrollmentWindow ? enrollmentWindow.enrollmentOpen !== false : null
   const academicYear = deriveAcademicYear(profile, profile?.enrollmentDate)
   const firstYear = academicYear.toLowerCase().includes("year 1")
   const spotlightMessage = firstYear
     ? "Your first-year classes are coordinated by the registrar. Use the portal to stay ahead on billing, announcements, and academic updates."
-    : enrollmentOpen
-      ? "Registration is open. Shape your semester, review your balance, and keep an eye on the newest university updates."
-      : "Registration is currently closed, but your dashboard still gives you a clean view of grades, billing, and campus news."
+    : enrollmentOpen === null
+      ? "Checking registration status. Your dashboard still gives you a clean view of grades, billing, and campus news."
+      : enrollmentOpen
+        ? "Registration is open. Shape your semester, review your balance, and keep an eye on the newest university updates."
+        : "Registration is currently closed, but your dashboard still gives you a clean view of grades, billing, and campus news."
 
   const quickActions = [
     {
@@ -175,7 +177,7 @@ export function StudentOverviewPage() {
                 {profile?.program || "Program pending"}
               </Badge>
               <Badge variant="outline" className="rounded-md border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700">
-                {enrollmentOpen ? "Registration open" : "Registration closed"}
+                {enrollmentOpen === null ? "Checking registration…" : enrollmentOpen ? "Registration open" : "Registration closed"}
               </Badge>
               <Badge variant="outline" className="rounded-md border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-700">
                 {fullyPaid ? "Finance clear" : `Outstanding: $${Number(balanceStatus).toFixed(2)}`}

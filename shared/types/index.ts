@@ -754,6 +754,27 @@ export interface UserNotification extends Record<string, unknown> {
   actor?: string
 }
 
+export interface GradeChangeRequest extends Record<string, unknown> {
+  id: string
+  enrollmentId: string
+  courseId: string
+  courseCode?: string | null
+  courseTitle?: string | null
+  studentId: string
+  studentName: string
+  professorId: string
+  professorName: string
+  newGrades: Record<string, number | null>
+  reason: string
+  proofDataUrl?: string | null
+  proofFilename?: string | null
+  status: 'pending' | 'approved' | 'rejected'
+  createdAt: string
+  reviewedBy?: string | null
+  reviewedAt?: string | null
+  responseNote?: string | null
+}
+
 export interface VisitorLog extends Record<string, unknown> {
   id: string
   visitorName: string

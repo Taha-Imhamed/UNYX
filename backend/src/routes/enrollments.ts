@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { PoolClient } from 'pg'
 import { sendMail } from '../lib/mailer.js'
+import { roundToCents, subtractCurrency, multiplyCurrency, sumCents } from '../lib/currency.js'
 import {
   coursesCollection,
   enrollmentsCollection,
@@ -1241,8 +1242,8 @@ async function applyCoupon(basePrice: number, couponCode?: string) {
 
   const percentDecimal = coupon.percent > 1 ? coupon.percent / 100 : coupon.percent
   const percent = Number(percentDecimal.toFixed(4))
-  const discountAmount = Number((basePrice * percent).toFixed(2))
-  const price = Number((basePrice - discountAmount).toFixed(2))
+  const discountAmount = multiplyCurrency(basePrice, percent)
+  const price = subtractCurrency(basePrice, discountAmount)
   return { price, discountPercent: percent, discountAmount, coupon: normalised }
 }
 
@@ -1270,15 +1271,16 @@ async function adjustStudentBalance(options: {
 }) {
   const { student, studentsCol, paymentsCol, delta, note, source, referenceId } = options
   const current = student.balance ?? 0
-  const nextBalance = Number((current + delta).toFixed(2))
+  const nextBalance = sumCents([current, delta])
   const createdAt = new Date().toISOString()
   const transactionId = buildTransactionId()
+  const roundedAbsDelta = Math.abs(roundToCents(delta))
 
   const transaction: PaymentTransaction = {
     id: transactionId,
     displayId: transactionId,
     studentId: student.id,
-    amount: Math.abs(Number(delta.toFixed(2))),
+    amount: roundedAbsDelta,
     method: 'internal',
     note,
     createdAt,
@@ -1295,7 +1297,7 @@ async function adjustStudentBalance(options: {
   await studentsCol.updateOne({ id: student.id }, { $set: { balance: nextBalance } })
   await appendFinancialLedgerEntry({
     studentId: student.id,
-    amount: Math.abs(Number(delta.toFixed(2))),
+    amount: roundedAbsDelta,
     entryType: delta >= 0 ? 'debit' : 'credit',
     source,
     note,
@@ -3936,7 +3938,7 @@ enrollmentRoutes.put('/:id', requireAdmin, async (req, res) => {
 
     const wasCharged = existing.tuitionCharged === true
     const willChargeNow = false
-    const priceDifference = wasCharged ? Number((nextPrice - existing.price).toFixed(2)) : 0
+    const priceDifference = wasCharged ? subtractCurrency(nextPrice, existing.price) : 0
     const chargeDelta = willChargeNow ? nextPrice : priceDifference
 
     if ((statusValue === 'active' || statusValue === 'completed') && !(await checkBalance(existing.studentId, nextPrice)).cleared) {

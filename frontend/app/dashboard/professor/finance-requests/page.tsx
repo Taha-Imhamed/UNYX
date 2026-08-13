@@ -4,10 +4,19 @@ import { useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { WalletCards } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { ProfessorTabNav } from "@/components/professor/ProfessorTabNav"
 import { useProfessorFinanceRequests } from "@/hooks/professor/use-professor-finance-requests"
+import type { FinanceRequest } from "@shared/types"
+
+const statusVariant: Record<FinanceRequest["status"], "default" | "secondary" | "outline" | "destructive"> = {
+  pending: "secondary",
+  approved: "default",
+  fulfilled: "outline",
+  rejected: "destructive",
+}
 
 export default function ProfessorFinanceRequestsPage() {
   const router = useRouter()
@@ -54,6 +63,39 @@ export default function ProfessorFinanceRequestsPage() {
                   {financeRequests[0] ? new Date(financeRequests[0].updatedAt).toLocaleDateString() : "No requests yet"}
                 </p>
               </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border border-border">
+        <CardHeader>
+          <CardTitle>Your requests</CardTitle>
+          <p className="text-sm text-muted-foreground">Most recent requests you've submitted to finance.</p>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground">Loading finance requests...</p>
+          ) : financeRequests.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No finance requests yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {financeRequests.map((r) => (
+                <div key={r.id} className="rounded-lg border border-border/60 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{r.title}</span>
+                      <Badge variant={statusVariant[r.status]}>{r.status}</Badge>
+                    </div>
+                    <span className="text-sm text-muted-foreground">${r.amount.toLocaleString()}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{r.itemName} — {r.justification}</p>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>Submitted {new Date(r.createdAt).toLocaleDateString()}</span>
+                    {r.financeNotes && <span>Finance note: {r.financeNotes}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>

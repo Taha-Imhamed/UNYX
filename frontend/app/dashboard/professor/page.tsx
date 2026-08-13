@@ -188,27 +188,10 @@ export default function ProfessorDashboardPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <ProfessorCourseSelect courses={courses} selectedCourseId={selectedCourseId} onChange={setSelectedCourseId} isLoading={isLoadingCourses} />
-          {selectedCourse && (
-            <div className="grid gap-3 md:grid-cols-4">
-              <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Department</p>
-                <p className="mt-2 font-medium">{selectedCourse.department || selectedCourse.branch || "—"}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Dates</p>
-                <p className="mt-2 font-medium">
-                  {new Date(selectedCourse.startDate).toLocaleDateString()} - {new Date(selectedCourse.endDate).toLocaleDateString()}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Location</p>
-                <p className="mt-2 font-medium">{selectedCourse.schedule?.[0]?.location ?? selectedCourse.location ?? "—"}</p>
-              </div>
-              <div className="rounded-xl border border-border bg-secondary/30 p-4 text-sm">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Workspace</p>
-                <p className="mt-2 font-medium">{isLoadingWorkspace ? "Loading..." : workspace ? "Connected to DB" : "Not ready"}</p>
-              </div>
-            </div>
+          {!selectedCourse && !isLoadingCourses && (
+            <p className="text-sm text-muted-foreground">
+              {courses.length === 0 ? "No assigned courses yet." : "Select a course above to see its details."}
+            </p>
           )}
         </CardContent>
       </Card>

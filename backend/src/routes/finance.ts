@@ -20,6 +20,7 @@ import type {
 } from '../../../shared/types/index.js'
 import { appendFinancialLedgerEntry, ensureAcademicComplianceStorage, financialLedgerCollection, writeAuditLog } from '../lib/academic-compliance.js'
 import { sendMail } from '../lib/mailer.js'
+import { roundToCents, sumCents, subtractCurrency } from '../lib/currency.js'
 
 const FINANCE_INVOICES_COLLECTION = 'finance_invoices'
 const FINANCE_INSTALLMENT_PLANS_COLLECTION = 'finance_installment_plans'
@@ -326,7 +327,7 @@ function normalizeLineItems(items: z.infer<typeof invoiceLineItemSchema>[]): Fin
   return items.map((item) => {
     const quantity = Number(item.quantity ?? 1)
     const unitAmount = Number(item.unitAmount)
-    const total = Number((quantity * unitAmount).toFixed(2))
+    const total = roundToCents(quantity * unitAmount)
 
     return {
       id: buildId('INVLINE'),
@@ -347,8 +348,8 @@ function computeInvoiceStatus(invoice: FinanceInvoice, transactions: PaymentTran
     .filter((payment) => payment.financeStatus !== 'rejected' && payment.financeStatus !== 'pending')
     .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
 
-  const paidAmount = Number(applied.toFixed(2))
-  const balanceDue = Math.max(0, Number((invoice.total - paidAmount).toFixed(2)))
+  const paidAmount = roundToCents(applied)
+  const balanceDue = Math.max(0, subtractCurrency(invoice.total, paidAmount))
 
   let status: FinanceInvoice['status'] = invoice.status
   if (invoice.status !== 'cancelled' && invoice.status !== 'draft') {
@@ -379,7 +380,7 @@ async function createChargeTransaction(options: {
   const studentsCol = await studentsCollection()
   const paymentsCol = await paymentsCollection()
   const current = Number(student.balance ?? 0)
-  const nextBalance = Number((current + amount).toFixed(2))
+  const nextBalance = sumCents([current, amount])
   const createdAt = new Date().toISOString()
   const transactionId = buildId('TXN')
 
@@ -387,7 +388,7 @@ async function createChargeTransaction(options: {
     id: transactionId,
     displayId: transactionId,
     studentId: student.id,
-    amount: Number(amount.toFixed(2)),
+    amount: roundToCents(amount),
     method: 'internal',
     note,
     createdAt,
@@ -437,7 +438,7 @@ export async function createTuitionInvoiceForEnrollment(options: {
   }
 
   const now = new Date().toISOString()
-  const amount = Number(options.price.toFixed(2))
+  const amount = roundToCents(options.price)
   const lineItems: FinanceInvoiceLineItem[] = [
     {
       id: buildId('INVLINE'),
@@ -528,7 +529,7 @@ financeRoutes.post('/invoices', requirePermission('finance:manage'), async (req,
     }
 
     const lineItems = normalizeLineItems(parsed.data.lineItems)
-    const subtotal = Number(lineItems.reduce((sum, item) => sum + item.total, 0).toFixed(2))
+    const subtotal = sumCents(lineItems.map((item) => item.total))
     const total = subtotal
     const now = new Date().toISOString()
     const invoice: FinanceInvoice = {
@@ -602,11 +603,11 @@ financeRoutes.post('/installment-plans', requirePermission('finance:manage'), as
     }
 
     const now = new Date().toISOString()
-    const totalAmount = Number(parsed.data.totalAmount.toFixed(2))
-    const paidAmount = Number(parsed.data.paidAmount.toFixed(2))
+    const totalAmount = roundToCents(parsed.data.totalAmount)
+    const paidAmount = roundToCents(parsed.data.paidAmount)
     const installmentCount = parsed.data.installmentCount
-    const amountPerInstallment = Number((totalAmount / installmentCount).toFixed(2))
-    const remainingBalance = Math.max(0, Number((totalAmount - paidAmount).toFixed(2)))
+    const amountPerInstallment = roundToCents(totalAmount / installmentCount)
+    const remainingBalance = Math.max(0, subtractCurrency(totalAmount, paidAmount))
 
     const plan: FinanceInstallmentPlan = {
       id: buildId('PLAN'),
@@ -684,9 +685,9 @@ financeRoutes.post('/installment-plans/request', async (req, res) => {
     }
 
     const now = new Date().toISOString()
-    const totalAmount = Number(parsed.data.totalAmount.toFixed(2))
+    const totalAmount = roundToCents(parsed.data.totalAmount)
     const installmentCount = parsed.data.installmentCount
-    const amountPerInstallment = Number((totalAmount / installmentCount).toFixed(2))
+    const amountPerInstallment = roundToCents(totalAmount / installmentCount)
     const nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
 
     const plan: FinanceInstallmentPlan = {
@@ -769,8 +770,10 @@ financeRoutes.post('/sponsorships', requirePermission('finance:manage'), async (
       sponsorName: parsed.data.sponsorName,
       sponsorType: parsed.data.sponsorType,
       coverageType: parsed.data.coverageType,
-      coverageValue: Number(parsed.data.coverageValue.toFixed(2)),
-      appliedAmount: Number(parsed.data.appliedAmount.toFixed(2)),
+      // coverageValue is a percentage when coverageType is 'percentage' (e.g. 50 = 50%),
+      // not always a dollar amount -- left unrounded-to-cents on purpose, unlike appliedAmount.
+      coverageValue: parsed.data.coverageValue,
+      appliedAmount: roundToCents(parsed.data.appliedAmount),
       status: parsed.data.status,
       startDate: parsed.data.startDate,
       endDate: parsed.data.endDate ?? null,
@@ -830,7 +833,7 @@ financeRoutes.post('/refunds', requirePermission('finance:manage'), async (req, 
       studentName: `${student.firstName} ${student.lastName}`,
       invoiceId: parsed.data.invoiceId ?? null,
       invoiceNumber: invoice?.invoiceNumber ?? null,
-      amount: Number(parsed.data.amount.toFixed(2)),
+      amount: roundToCents(parsed.data.amount),
       reason: parsed.data.reason,
       requestedAt: new Date().toISOString(),
       status: 'pending',
@@ -883,7 +886,7 @@ financeRoutes.post('/refunds/:id/approve', requirePermission('finance:approve'),
       id: buildId('EXP'),
       category: 'Refunds',
       description: `Approved refund for ${request.studentName}${request.invoiceNumber ? ` (${request.invoiceNumber})` : ''}`,
-      amount: Number(request.amount.toFixed(2)),
+      amount: roundToCents(request.amount),
       date: approvedAt.slice(0, 10),
       approvedBy,
       status: 'approved',
@@ -1012,23 +1015,22 @@ financeRoutes.get('/reports/summary', requirePermission('reports:view'), async (
     ])
 
     const hydratedInvoices = invoices.map((invoice) => computeInvoiceStatus(invoice, payments))
-    const totalRevenue = Number(hydratedInvoices.reduce((sum, invoice) => sum + invoice.total, 0).toFixed(2))
-    const totalCollectedPayments = Number(
+    const totalRevenue = sumCents(hydratedInvoices.map((invoice) => invoice.total))
+    const totalCollectedPayments = sumCents(
       payments
         .filter((payment) => payment.type === 'credit')
         .filter((payment) => payment.financeStatus !== 'rejected' && payment.financeStatus !== 'pending')
-        .reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0)
-        .toFixed(2),
+        .map((payment) => Number(payment.amount ?? 0)),
     )
-    const totalPendingBalances = Number(students.reduce((sum, student) => sum + Math.max(0, Number(student.balance ?? 0)), 0).toFixed(2))
-    const totalExpenses = Number(expenses.reduce((sum, expense) => sum + Number(expense.amount ?? 0), 0).toFixed(2))
+    const totalPendingBalances = sumCents(students.map((student) => Math.max(0, Number(student.balance ?? 0))))
+    const totalExpenses = sumCents(expenses.map((expense) => Number(expense.amount ?? 0)))
 
     const summary: FinanceReportSummary = {
       totalRevenue,
       totalCollectedPayments,
       totalPendingBalances,
       totalExpenses,
-      netRevenue: Number((totalCollectedPayments - totalExpenses).toFixed(2)),
+      netRevenue: subtractCurrency(totalCollectedPayments, totalExpenses),
       unpaidStudentCount: students.filter((student) => Number(student.balance ?? 0) > 0).length,
       openInvoiceCount: hydratedInvoices.filter((invoice) => invoice.balanceDue > 0).length,
       pendingRefundCount: refunds.filter((request) => request.status === 'pending').length,
@@ -1095,7 +1097,7 @@ financeRoutes.post('/requests', async (req, res) => {
       requestType: parsed.data.requestType,
       title: parsed.data.title,
       itemName: parsed.data.itemName,
-      amount: Number(parsed.data.amount.toFixed(2)),
+      amount: roundToCents(parsed.data.amount),
       urgency: parsed.data.urgency,
       justification: parsed.data.justification,
       vendorName: parsed.data.vendorName ?? null,
@@ -1185,7 +1187,7 @@ financeRoutes.put('/requests/:id', async (req, res) => {
     if (parsed.data.requestType !== undefined) updates.requestType = parsed.data.requestType
     if (parsed.data.title !== undefined) updates.title = parsed.data.title
     if (parsed.data.itemName !== undefined) updates.itemName = parsed.data.itemName
-    if (parsed.data.amount !== undefined) updates.amount = Number(parsed.data.amount.toFixed(2))
+    if (parsed.data.amount !== undefined) updates.amount = roundToCents(parsed.data.amount)
     if (parsed.data.urgency !== undefined) updates.urgency = parsed.data.urgency
     if (parsed.data.justification !== undefined) updates.justification = parsed.data.justification
     if (parsed.data.vendorName !== undefined) updates.vendorName = parsed.data.vendorName ?? null
@@ -1271,7 +1273,7 @@ financeRoutes.get('/reconciliation', requirePermission('finance:view', 'VIEW_FIN
       const method = String(payment.method ?? 'unknown')
       const bucket = byMethod.get(method) ?? { method, count: 0, total: 0 }
       bucket.count += 1
-      bucket.total = Number((bucket.total + Number(payment.amount ?? 0)).toFixed(2))
+      bucket.total = sumCents([bucket.total, Number(payment.amount ?? 0)])
       byMethod.set(method, bucket)
     }
 
@@ -1284,7 +1286,7 @@ financeRoutes.get('/reconciliation', requirePermission('finance:view', 'VIEW_FIN
         byMethod: Array.from(byMethod.values()).sort((a, b) => b.total - a.total),
         pendingCount,
         rejectedCount,
-        totalConfirmed: Number(confirmed.reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0).toFixed(2)),
+        totalConfirmed: sumCents(confirmed.map((payment) => Number(payment.amount ?? 0))),
       },
     })
   } catch (error) {
@@ -1347,7 +1349,7 @@ financeRoutes.get('/outstanding-balance-report', requirePermission('finance:view
       const key = row.department ?? 'Unassigned'
       const bucket = byDepartment.get(key) ?? { department: key, studentCount: 0, totalBalance: 0 }
       bucket.studentCount += 1
-      bucket.totalBalance = Number((bucket.totalBalance + row.balance).toFixed(2))
+      bucket.totalBalance = sumCents([bucket.totalBalance, row.balance])
       byDepartment.set(key, bucket)
     }
 
@@ -1402,7 +1404,7 @@ financeRoutes.post('/jobs/assess-late-fees', requirePermission('finance:manage')
       const student = await studentsCol.findOne({ id: invoice.studentId })
       if (!student) continue
 
-      const feeAmount = Number((invoice.balanceDue * LATE_FEE_PERCENT).toFixed(2))
+      const feeAmount = roundToCents(invoice.balanceDue * LATE_FEE_PERCENT)
       if (feeAmount <= 0) continue
 
       const feeLineItem: FinanceInvoiceLineItem = {
@@ -1415,8 +1417,8 @@ financeRoutes.post('/jobs/assess-late-fees', requirePermission('finance:manage')
         total: feeAmount,
       }
       const updatedLineItems = [...invoice.lineItems, feeLineItem]
-      const newSubtotal = Number((invoice.subtotal + feeAmount).toFixed(2))
-      const newTotal = Number((invoice.total + feeAmount).toFixed(2))
+      const newSubtotal = sumCents([invoice.subtotal, feeAmount])
+      const newTotal = sumCents([invoice.total, feeAmount])
 
       await invoicesCol.updateOne(
         { id: invoice.id },
@@ -1561,7 +1563,7 @@ financeRoutes.get('/net-income-trend', requirePermission('reports:view'), async 
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       const idx = bucketIndex.get(key)
       if (idx === undefined) continue
-      buckets[idx].income = Number((buckets[idx].income + Number(record.amount ?? 0)).toFixed(2))
+      buckets[idx].income = sumCents([buckets[idx].income, Number(record.amount ?? 0)])
     }
     for (const record of expenses) {
       const date = new Date(record.date)
@@ -1569,10 +1571,10 @@ financeRoutes.get('/net-income-trend', requirePermission('reports:view'), async 
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
       const idx = bucketIndex.get(key)
       if (idx === undefined) continue
-      buckets[idx].expenses = Number((buckets[idx].expenses + Number(record.amount ?? 0)).toFixed(2))
+      buckets[idx].expenses = sumCents([buckets[idx].expenses, Number(record.amount ?? 0)])
     }
     for (const bucket of buckets) {
-      bucket.netIncome = Number((bucket.income - bucket.expenses).toFixed(2))
+      bucket.netIncome = subtractCurrency(bucket.income, bucket.expenses)
     }
 
     res.json({ success: true, data: buckets })

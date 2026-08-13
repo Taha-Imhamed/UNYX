@@ -35,6 +35,8 @@ interface AuthContextType {
     | { success: false; error: string }
   >
   fetchUserNotifications: (userId: string) => Promise<UserNotification[]>
+  markNotificationRead: (userId: string, notificationId: string) => Promise<boolean>
+  markAllNotificationsRead: (userId: string) => Promise<boolean>
   updateProfile: (input: { userId: string; username?: string; email?: string; avatarDataUrl?: string | null }) => Promise<
     | { success: true; data: AuthUser; message?: string }
     | { success: false; error: string }
@@ -406,6 +408,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const markNotificationRead: AuthContextType["markNotificationRead"] = async (userId, notificationId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/${userId}/notifications/${notificationId}/read`, {
+        method: "PATCH",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      })
+      const json = await parseJsonResponse<null>(response)
+      return response.ok && json.success
+    } catch (error) {
+      console.error("Notification mark-read failed", error)
+      return false
+    }
+  }
+
+  const markAllNotificationsRead: AuthContextType["markAllNotificationsRead"] = async (userId) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/${userId}/notifications/read-all`, {
+        method: "PATCH",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      })
+      const json = await parseJsonResponse<null>(response)
+      return response.ok && json.success
+    } catch (error) {
+      console.error("Notification mark-all-read failed", error)
+      return false
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -415,6 +449,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         updatePassword,
         adminResetPassword,
         fetchUserNotifications,
+        markNotificationRead,
+        markAllNotificationsRead,
         updateProfile,
         isLoading,
         isAdmin: user?.role === "admin" || user?.role === "super-admin" || user?.role === "supervisor",

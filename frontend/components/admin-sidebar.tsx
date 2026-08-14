@@ -49,6 +49,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { Permission } from "@shared/types"
 import { useModuleToggles } from "@/lib/terminal-context"
 import { moduleKeyForSidebarName } from "@/lib/terminal-modules"
+import { useSuperAdminGifEnabled } from "@/lib/super-admin-gif"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 type Role = AuthUser["role"]
 
@@ -416,35 +418,24 @@ function SidebarNavLink({
   )
 }
 
-export function AdminSidebar() {
-  const pathname = usePathname()
-  const currentPathname = pathname ?? ""
-  const [collapsed, setCollapsed] = useState(false)
-  const [currentHash, setCurrentHash] = useState("")
-  const { user, logout, hasPermission } = useAuth()
-  const { isModuleEnabled, isFeatureEnabled, getModuleState } = useModuleToggles()
+function useAdminNavSections() {
+  const { user, hasPermission } = useAuth()
+  const { isModuleEnabled, isFeatureEnabled } = useModuleToggles()
 
-  useEffect(() => {
-    const syncHash = () => setCurrentHash(typeof window !== "undefined" ? window.location.hash : "")
-    syncHash()
-    window.addEventListener("hashchange", syncHash)
-    return () => window.removeEventListener("hashchange", syncHash)
-  }, [])
-
-  const filteredSections = useMemo(() => {
+  return useMemo(() => {
     const baseSections =
       user?.role === "professor"
         ? [...navigationSections, ...professorNavigationSections, settingsNavigationSection]
         : [...navigationSections, settingsNavigationSection]
-          return baseSections
+    return baseSections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => {
           if (item.roleHome) return true
           // Hide the central Enrollment management page from professors in the sidebar
-                if (user?.role === "professor" && item.href === "/dashboard/enrollment") return false
-                // Also hide the "Classes" link from professors
-                if (user?.role === "professor" && item.name === "Classes") return false
+          if (user?.role === "professor" && item.href === "/dashboard/enrollment") return false
+          // Also hide the "Classes" link from professors
+          if (user?.role === "professor" && item.name === "Classes") return false
           const allRoles = getAllUserRoles(user)
           const roleAllowed =
             !item.allowedRoles ||
@@ -463,6 +454,220 @@ export function AdminSidebar() {
       }))
       .filter((section) => section.items.length > 0)
   }, [hasPermission, isModuleEnabled, isFeatureEnabled, user?.role, user?.secondaryRoles])
+}
+
+function MobileAdminNav() {
+  const pathname = usePathname()
+  const currentPathname = pathname ?? ""
+  const { user, logout } = useAuth()
+  const { getModuleState } = useModuleToggles()
+  const filteredSections = useAdminNavSections()
+  const [open, setOpen] = useState(false)
+
+  const roleLabel = formatRoleLabel(user?.role)
+  const homeHref = resolveHomePath(user?.role)
+
+  return (
+    <div
+      style={{
+        backgroundImage: "linear-gradient(180deg, var(--menu-color) 0%, color-mix(in oklab, var(--menu-color) 78%, black 22%) 100%)",
+        color: "var(--menu-foreground)",
+      }}
+      className="sticky top-0 z-40 flex items-center justify-between gap-2 px-3 py-2.5 pt-[calc(env(safe-area-inset-top)+10px)] shadow-[0_4px_16px_rgba(15,23,42,0.18)] md:hidden print:hidden"
+    >
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetTrigger asChild>
+          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-[9px] border border-[#23345e] bg-[#16244a] text-[#aebbdd] hover:bg-[#1c2c56]">
+            <Menu className="h-[18px] w-[18px]" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent
+          side="left"
+          style={{
+            backgroundImage: "linear-gradient(180deg, var(--menu-color) 0%, color-mix(in oklab, var(--menu-color) 78%, black 22%) 100%)",
+            color: "var(--menu-foreground)",
+          }}
+          className="w-[17.5rem] border-r border-white/10 p-0"
+        >
+          <SheetHeader className="px-4 py-4 text-left">
+            <SheetTitle style={{ color: "var(--menu-foreground)" }} className="text-[11px] font-extrabold uppercase tracking-[0.12em]">
+              {roleLabel} Menu
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-4 pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="space-y-3.5">
+              {filteredSections.map((section) => (
+                <section key={section.title}>
+                  <h3 className="mb-1.5 px-2 text-[10px] font-extrabold uppercase tracking-[0.14em]" style={{ color: "var(--menu-foreground-muted)" }}>
+                    {section.title}
+                  </h3>
+                  <div className="space-y-0.5">
+                    {section.items.map((item) => {
+                      const href = item.roleHome ? homeHref : item.href
+                      const [hrefPath] = href.split("#")
+                      const isActive = currentPathname === hrefPath || currentPathname.startsWith(hrefPath + "/")
+                      const locked = getModuleState(moduleKeyForSidebarName(item.name)) === "locked"
+                      return (
+                        <div key={`${section.title}-${item.name}`} onClick={() => setOpen(false)}>
+                          <SidebarNavLink href={href} label={item.name} icon={item.icon} isActive={isActive} collapsed={false} locked={locked} />
+                        </div>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+            <Button
+              onClick={logout}
+              style={{ color: "var(--menu-foreground)" }}
+              className="mt-4 h-10 w-full rounded-[10px] border border-white/[0.14] bg-white/[0.06] text-[13px] font-semibold hover:bg-white/[0.12]"
+              variant="ghost"
+            >
+              <LogOut className="mr-2 h-4 w-4" /> Logout
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+      <Link href={homeHref} className="min-w-0 flex-1 text-center">
+        <span className="block truncate text-[11px] font-extrabold uppercase tracking-[0.12em]" style={{ color: "var(--menu-foreground)" }}>
+          UNYT Portal
+        </span>
+      </Link>
+      <Avatar className="h-9 w-9 shadow-[0_4px_10px_rgba(0,0,0,0.25)]">
+        <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.username ?? "Admin"} />
+        <AvatarFallback className="bg-[linear-gradient(135deg,#7f9ae0,#5f79c9)] text-[13px] font-bold text-white">
+          {(user?.username ?? "AD")
+            .split(" ")
+            .map((part) => part[0])
+            .join("")
+            .slice(0, 2)
+            .toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
+    </div>
+  )
+}
+
+function MobileBottomTabBar() {
+  const pathname = usePathname()
+  const currentPathname = pathname ?? ""
+  const { user } = useAuth()
+  const filteredSections = useAdminNavSections()
+  const [open, setOpen] = useState(false)
+
+  const homeHref = resolveHomePath(user?.role)
+
+  const flatItems = useMemo(
+    () =>
+      filteredSections
+        .flatMap((section) => section.items)
+        .filter((item) => item.name !== "Settings"),
+    [filteredSections],
+  )
+
+  const tabItems = flatItems.slice(0, 4)
+  const restItems = filteredSections
+    .map((section) => ({ ...section, items: section.items.filter((item) => !tabItems.includes(item)) }))
+    .filter((section) => section.items.length > 0)
+
+  return (
+    <>
+      <nav
+        style={{
+          backgroundImage: "linear-gradient(180deg, color-mix(in oklab, var(--menu-color) 92%, black 8%) 0%, color-mix(in oklab, var(--menu-color) 74%, black 26%) 100%)",
+          color: "var(--menu-foreground)",
+        }}
+        className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-white/10 px-1 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.22)] md:hidden print:hidden"
+      >
+        {tabItems.map((item) => {
+          const href = item.roleHome ? homeHref : item.href
+          const [hrefPath] = href.split("#")
+          const isActive = currentPathname === hrefPath || currentPathname.startsWith(hrefPath + "/")
+          const Icon = item.icon
+          return (
+            <Link
+              key={`tab-${item.name}`}
+              href={href}
+              className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold"
+              style={{ color: isActive ? "#fff" : "var(--menu-foreground-muted)" }}
+            >
+              <Icon className="h-5 w-5" style={{ color: isActive ? "#8fa8f2" : "var(--menu-foreground-muted)" }} />
+              <span className="max-w-full truncate px-1">{item.name}</span>
+            </Link>
+          )
+        })}
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <button
+              type="button"
+              className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold"
+              style={{ color: "var(--menu-foreground-muted)" }}
+            >
+              <Menu className="h-5 w-5" />
+              <span>More</span>
+            </button>
+          </SheetTrigger>
+          <SheetContent
+            side="bottom"
+            style={{
+              backgroundImage: "linear-gradient(180deg, var(--menu-color) 0%, color-mix(in oklab, var(--menu-color) 78%, black 22%) 100%)",
+              color: "var(--menu-foreground)",
+            }}
+            className="max-h-[80vh] rounded-t-[20px] border-white/10 pb-[calc(env(safe-area-inset-bottom)+16px)]"
+          >
+            <SheetHeader className="px-1 pb-1 text-left">
+              <SheetTitle style={{ color: "var(--menu-foreground)" }} className="text-[13px] font-extrabold uppercase tracking-[0.1em]">
+                More
+              </SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="space-y-3.5">
+                {restItems.map((section) => (
+                  <section key={section.title}>
+                    <h3 className="mb-1.5 px-2 text-[10px] font-extrabold uppercase tracking-[0.14em]" style={{ color: "var(--menu-foreground-muted)" }}>
+                      {section.title}
+                    </h3>
+                    <div className="space-y-0.5">
+                      {section.items.map((item) => {
+                        const href = item.roleHome ? homeHref : item.href
+                        const [hrefPath] = href.split("#")
+                        const isActive = currentPathname === hrefPath || currentPathname.startsWith(hrefPath + "/")
+                        return (
+                          <div key={`more-${section.title}-${item.name}`} onClick={() => setOpen(false)}>
+                            <SidebarNavLink href={href} label={item.name} icon={item.icon} isActive={isActive} collapsed={false} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </nav>
+      <div aria-hidden className="h-[calc(56px+env(safe-area-inset-bottom))] md:hidden" />
+    </>
+  )
+}
+
+function DesktopAdminSidebar() {
+  const pathname = usePathname()
+  const currentPathname = pathname ?? ""
+  const [collapsed, setCollapsed] = useState(false)
+  const [currentHash, setCurrentHash] = useState("")
+  const { user, logout } = useAuth()
+  const { getModuleState } = useModuleToggles()
+  const [gifEnabled] = useSuperAdminGifEnabled()
+
+  useEffect(() => {
+    const syncHash = () => setCurrentHash(typeof window !== "undefined" ? window.location.hash : "")
+    syncHash()
+    window.addEventListener("hashchange", syncHash)
+    return () => window.removeEventListener("hashchange", syncHash)
+  }, [])
+
+  const filteredSections = useAdminNavSections()
 
   const roleLabel = formatRoleLabel(user?.role)
   const homeHref = resolveHomePath(user?.role)
@@ -474,7 +679,7 @@ export function AdminSidebar() {
         color: "var(--menu-foreground)",
       }}
       className={cn(
-        "relative flex h-full flex-col shadow-[0_22px_48px_-28px_rgba(15,23,42,0.56)] print:hidden",
+        "relative hidden h-full flex-col shadow-[0_22px_48px_-28px_rgba(15,23,42,0.56)] print:hidden md:flex",
         collapsed ? "w-24" : "w-[16.5rem]",
       )}
     >
@@ -511,17 +716,34 @@ export function AdminSidebar() {
             collapsed && "px-2",
           )}
         >
-          <Avatar className={cn("mx-auto shadow-[0_6px_16px_rgba(0,0,0,0.25)]", collapsed ? "h-14 w-14" : "h-[76px] w-[76px]")}>
-            <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.username ?? "Admin"} />
-            <AvatarFallback className="bg-[linear-gradient(135deg,#7f9ae0,#5f79c9)] text-[30px] font-bold text-white">
-              {(user?.username ?? "AD")
-                .split(" ")
-                .map((part) => part[0])
-                .join("")
-                .slice(0, 2)
-                .toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <div
+            className="relative mx-auto flex items-center justify-center"
+            style={
+              !collapsed && user?.role === "super-admin" && gifEnabled
+                ? { width: 170, height: 170 }
+                : { width: collapsed ? 56 : 76, height: collapsed ? 56 : 76 }
+            }
+          >
+            {!collapsed && user?.role === "super-admin" && gifEnabled && (
+              <img
+                src="https://media3.giphy.com/media/v1.Y2lkPTZjMDliOTUyZXlycTFoeGkzcHIzd2o2ZmppenhlaHVmc3VhaHR3NXJhNzY2dmw4OSZlcD12MV9zdGlja2Vyc19zZWFyY2gmY3Q9cw/JSq8jv7SEm5GrpFebD/source.gif"
+                alt=""
+                className="pointer-events-none absolute left-1/2 top-1/2 h-[170px] w-[270px] -translate-x-1/2 -translate-y-[65%] animate-halo-pulse object-contain"
+                style={{ zIndex: 1 }}
+              />
+            )}
+            <Avatar className={cn("relative shadow-[0_6px_16px_rgba(0,0,0,0.25)]", collapsed ? "h-14 w-14" : "h-[76px] w-[76px]")} style={{ zIndex: 2 }}>
+              <AvatarImage src={user?.avatarUrl ?? undefined} alt={user?.username ?? "Admin"} />
+              <AvatarFallback className="bg-[linear-gradient(135deg,#7f9ae0,#5f79c9)] text-[30px] font-bold text-white">
+                {(user?.username ?? "AD")
+                  .split(" ")
+                  .map((part) => part[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </div>
 
           {!collapsed && (
             <>
@@ -586,5 +808,15 @@ export function AdminSidebar() {
         </div>
       )}
     </aside>
+  )
+}
+
+export function AdminSidebar() {
+  return (
+    <>
+      <MobileAdminNav />
+      <DesktopAdminSidebar />
+      <MobileBottomTabBar />
+    </>
   )
 }

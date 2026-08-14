@@ -1,5 +1,5 @@
 import type React from "react"
-import type { Metadata } from "next"
+import type { Metadata, Viewport } from "next"
 import { Analytics } from "@vercel/analytics/next"
 import { AuthProvider } from "@/lib/auth-context"
 import { ModuleTogglesProvider } from "@/lib/terminal-context"
@@ -22,6 +22,15 @@ export const metadata: Metadata = {
     ],
     apple: appLogo.src,
   },
+}
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#101a34",
 }
 
 export default function RootLayout({

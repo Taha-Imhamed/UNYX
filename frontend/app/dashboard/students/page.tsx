@@ -14,6 +14,7 @@ import StudentCard from "@/components/student-card"
 import { fetchProfessors } from "@/lib/professor-api"
 import { useFocusVisibilityRefresh } from "@/hooks/use-focus-visibility-refresh"
 import { useAuth } from "@/lib/auth-context"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import type { Professor, Student } from "@shared/types"
 import { deriveStudentYearLevel } from "@/lib/academic-terms"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -169,6 +170,7 @@ export default function StudentsPage() {
   const [professorsError, setProfessorsError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
@@ -365,15 +367,30 @@ export default function StudentsPage() {
     }
   }
 
-  const handleDeleteStudent = async (id: string) => {
-    if (deleteId) return
+  const requestDeleteStudent = (student: Student) => {
+    setDeleteState({
+      open: true,
+      targetId: student.id,
+      targetLabel: `${student.firstName ?? ""} ${student.lastName ?? ""}`.trim(),
+      loading: false,
+      error: null,
+    })
+  }
+
+  const confirmDeleteStudent = async () => {
+    const id = deleteState.targetId
+    if (!id) return
     setDeleteId(id)
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       await deleteStudent(id)
       setStudents((prev) => prev.filter((s) => s.id !== id))
       toast({ title: "Student deleted" })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (error) {
-      toast({ title: "Unable to delete student", description: error instanceof Error ? error.message : "", variant: "destructive" })
+      const message = error instanceof Error ? error.message : ""
+      toast({ title: "Unable to delete student", description: message, variant: "destructive" })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message || "Delete failed" }))
     } finally {
       setDeleteId(null)
     }
@@ -1084,7 +1101,7 @@ export default function StudentsPage() {
                       {canCreateOrDeleteStudents && (
                         <DropdownMenuItem
                           className="text-destructive"
-                          onClick={() => handleDeleteStudent(student.id)}
+                          onClick={() => requestDeleteStudent(student)}
                           disabled={deleteId === student.id}
                         >
                           <Trash2 className="h-4 w-4 mr-2" />
@@ -1332,6 +1349,17 @@ export default function StudentsPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDeleteStudent}
+        title="Delete student"
+        description={`Removing ${deleteState.targetLabel || "this student"} cannot be undone.`}
+        confirmLabel="Delete student"
+      />
     </div>
   )
 }

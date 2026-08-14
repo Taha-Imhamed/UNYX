@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { DashboardHeader } from "@/components/dashboard-header"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { deviceLogsApi } from "@/lib/ops-api"
 import type { DeviceLog } from "@shared/types"
@@ -16,6 +17,7 @@ export default function DeviceLogsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -33,13 +35,22 @@ export default function DeviceLogsPage() {
     return () => controller.abort()
   }, [])
 
-  const handleDelete = async (id: string) => {
+  const requestDelete = (item: DeviceLog) => {
+    setDeleteState({ open: true, targetId: item.id, targetLabel: item.deviceName, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await deviceLogsApi.remove(id)
-      setItems((prev) => prev.filter((item) => item.id !== id))
+      await deviceLogsApi.remove(deleteState.targetId)
+      setItems((prev) => prev.filter((item) => item.id !== deleteState.targetId))
       toast({ title: "Deleted" })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      toast({ variant: "destructive", title: "Delete failed", description: err instanceof Error ? err.message : "Unknown error" })
+      const message = err instanceof Error ? err.message : "Unknown error"
+      toast({ variant: "destructive", title: "Delete failed", description: message })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     }
   }
 
@@ -92,7 +103,7 @@ export default function DeviceLogsPage() {
                 </p>
                 {item.details && <p className="mt-1 text-sm text-muted-foreground">{item.details}</p>}
                 <div className="mt-3">
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
+                  <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>
                     Delete
                   </Button>
                 </div>
@@ -101,6 +112,17 @@ export default function DeviceLogsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete device log"
+        description={`Removing ${deleteState.targetLabel || "this device log"} cannot be undone.`}
+        confirmLabel="Delete log"
+      />
     </div>
   )
 }

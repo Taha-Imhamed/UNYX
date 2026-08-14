@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
 import { Clock, LockOpen, Trash2, Users } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard-header"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { EnrollmentTabNav } from "@/components/enrollment/EnrollmentTabNav"
 import { pillButtonStyles } from "@/components/enrollment/shared"
 import { useCourses } from "@/hooks/enrollment/use-courses"
@@ -37,6 +38,7 @@ export default function EnrollmentWaitlistPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [manualRefreshing, setManualRefreshing] = useState(false)
   const [actionPending, setActionPending] = useState<Record<string, boolean>>({})
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   const loadWaitlist = async () => {
     setLoadError(null)
@@ -112,20 +114,36 @@ export default function EnrollmentWaitlistPage() {
     }
   }
 
-  const handleRemove = async (enrollment: EnrollmentRecord) => {
-    setActionPending((prev) => ({ ...prev, [enrollment.id]: true }))
+  const requestRemove = (enrollment: EnrollmentRecord) => {
+    setDeleteState({
+      open: true,
+      targetId: enrollment.id,
+      targetLabel: `${enrollment.student.firstName} ${enrollment.student.lastName}`,
+      loading: false,
+      error: null,
+    })
+  }
+
+  const confirmRemove = async () => {
+    const targetId = deleteState.targetId
+    if (!targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
+    setActionPending((prev) => ({ ...prev, [targetId]: true }))
     try {
-      await deleteEnrollmentRequest(enrollment.id)
+      await deleteEnrollmentRequest(targetId)
       toast({ title: "Removed from waitlist" })
+      setDeleteState(emptyConfirmDeleteState)
       await loadWaitlist()
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Please try again."
       toast({
         variant: "destructive",
         title: "Unable to remove",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description: message,
       })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     } finally {
-      setActionPending((prev) => ({ ...prev, [enrollment.id]: false }))
+      setActionPending((prev) => ({ ...prev, [targetId]: false }))
     }
   }
 
@@ -228,7 +246,7 @@ export default function EnrollmentWaitlistPage() {
                               className={pillButtonStyles.dangerOutline}
                               variant="outline"
                               disabled={actionPending[entry.id]}
-                              onClick={() => handleRemove(entry)}
+                              onClick={() => requestRemove(entry)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                               Remove
@@ -244,6 +262,17 @@ export default function EnrollmentWaitlistPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmRemove}
+        title="Remove from waitlist"
+        description={`Removing ${deleteState.targetLabel || "this student"} from the waitlist cannot be undone.`}
+        confirmLabel="Remove"
+      />
     </div>
   )
 }

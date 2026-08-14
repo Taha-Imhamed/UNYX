@@ -28,6 +28,21 @@ html {
   scrollbar-width: thin;
 }
 
+@media (max-width: 767px) {
+  html,
+  body {
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  a,
+  button,
+  [role="button"] {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+}
+
 :root {
   --background: #edf4f8;
   --foreground: #101820;
@@ -393,6 +408,23 @@ html {
     50% {
       transform: translateY(-12px) rotate(1deg);
     }
+  }
+
+  /* Halo behind avatar, gentle breathing loop */
+  @keyframes halo-pulse {
+    0%,
+    100% {
+      transform: translate(-50%, -50%) scale(0.92);
+      opacity: 0.85;
+    }
+    50% {
+      transform: translate(-50%, -50%) scale(1.06);
+      opacity: 1;
+    }
+  }
+
+  .animate-halo-pulse {
+    animation: halo-pulse 2.4s ease-in-out infinite;
   }
 
   /* Rotating gradient border */

@@ -38,6 +38,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import type { UserNotification } from "@shared/types"
 import { createCoupon } from "@/lib/finance-api"
+import { useSuperAdminGifEnabled } from "@/lib/super-admin-gif"
 
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
 const ACCEPTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"])
@@ -62,6 +63,7 @@ function SectionIcon({ icon: Icon, tint }: { icon: typeof Shield; tint: keyof ty
 export default function SettingsPage() {
   const { toast } = useToast()
   const { user, isLoading, isAdmin, updateProfile, updatePassword, fetchUserNotifications } = useAuth()
+  const [gifEnabled, setGifEnabled] = useSuperAdminGifEnabled()
 
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const [avatarDataUrl, setAvatarDataUrl] = useState<string | null | undefined>(undefined)
@@ -535,6 +537,28 @@ export default function SettingsPage() {
           </Card>
 
           <AppearanceSettingsCard />
+
+          {user?.role === "super-admin" && (
+            <Card className="overflow-hidden border-border bg-card">
+              <div className="h-1 w-full bg-gradient-to-r from-violet-500 to-fuchsia-500" />
+              <CardHeader>
+                <CardTitle className="flex items-center gap-3 text-base">
+                  <SectionIcon icon={Sparkles} tint="violet" />
+                  Profile Effect
+                </CardTitle>
+                <CardDescription>Show an animated effect behind your sidebar avatar</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between gap-4 py-1">
+                  <div>
+                    <p className="font-medium text-foreground">Avatar animation</p>
+                    <p className="text-sm text-muted-foreground">Off by default</p>
+                  </div>
+                  <Switch checked={gifEnabled} onCheckedChange={setGifEnabled} />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {user && <MfaSettingsCard userId={user.id} mfaEnabled={mfaEnabled} onChange={setMfaEnabled} />}
 

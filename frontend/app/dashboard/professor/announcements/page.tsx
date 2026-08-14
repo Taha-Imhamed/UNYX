@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { ProfessorTabNav } from "@/components/professor/ProfessorTabNav"
 import { ProfessorCourseSelect } from "@/components/professor/ProfessorCourseSelect"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { useProfessorCourseWorkspace } from "@/hooks/professor/use-professor-workspace"
 
@@ -27,6 +28,7 @@ export default function ProfessorAnnouncementsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ title: "", body: "", pinned: false })
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   const resetForm = () => {
     setForm({ title: "", body: "", pinned: false })
@@ -51,12 +53,19 @@ export default function ProfessorAnnouncementsPage() {
     }
   }
 
-  const handleDelete = async (itemId: string) => {
+  const requestDelete = (item: { id: string; title: string }) => {
+    setDeleteState({ open: true, targetId: item.id, targetLabel: item.title, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await removeItem("announcements", itemId)
+      await removeItem("announcements", deleteState.targetId)
       toast({ title: "Deleted", description: "Saved change to dashboard." })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete item")
+      setDeleteState((prev) => ({ ...prev, loading: false, error: err instanceof Error ? err.message : "Unable to delete item" }))
     }
   }
 
@@ -130,7 +139,7 @@ export default function ProfessorAnnouncementsPage() {
                   >
                     Edit
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
+                  <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>
                     Delete
                   </Button>
                 </div>
@@ -139,6 +148,17 @@ export default function ProfessorAnnouncementsPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete announcement"
+        description={`Removing ${deleteState.targetLabel || "this announcement"} cannot be undone.`}
+        confirmLabel="Delete announcement"
+      />
     </div>
   )
 }

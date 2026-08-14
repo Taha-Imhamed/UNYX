@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Trash2, UserRound } from "lucide-react"
 import { DashboardHeader } from "@/components/dashboard-header"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
 import {
@@ -42,6 +43,7 @@ export default function AdmissionsDashboardPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionPending, setActionPending] = useState<Record<string, boolean>>({})
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   const [applicantName, setApplicantName] = useState("")
   const [program, setProgram] = useState("")
@@ -106,16 +108,26 @@ export default function AdmissionsDashboardPage() {
     }
   }
 
-  const handleDelete = async (item: InterviewSchedule) => {
-    setActionPending((prev) => ({ ...prev, [item.id]: true }))
+  const requestDelete = (item: InterviewSchedule) => {
+    setDeleteState({ open: true, targetId: item.id, targetLabel: item.applicantName, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    const id = deleteState.targetId
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
+    setActionPending((prev) => ({ ...prev, [id]: true }))
     try {
-      await deleteInterviewSchedule(item.id)
+      await deleteInterviewSchedule(id)
       toast({ title: "Interview removed" })
+      setDeleteState(emptyConfirmDeleteState)
       await load()
     } catch (error) {
-      toast({ variant: "destructive", title: "Unable to remove", description: error instanceof Error ? error.message : "Please try again." })
+      const message = error instanceof Error ? error.message : "Please try again."
+      toast({ variant: "destructive", title: "Unable to remove", description: message })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     } finally {
-      setActionPending((prev) => ({ ...prev, [item.id]: false }))
+      setActionPending((prev) => ({ ...prev, [id]: false }))
     }
   }
 
@@ -223,7 +235,7 @@ export default function AdmissionsDashboardPage() {
                       variant="outline"
                       className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
                       disabled={actionPending[item.id]}
-                      onClick={() => handleDelete(item)}
+                      onClick={() => requestDelete(item)}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -239,6 +251,17 @@ export default function AdmissionsDashboardPage() {
           </div>
         )}
       </div>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete interview schedule"
+        description={`Removing ${deleteState.targetLabel || "this interview schedule"} cannot be undone.`}
+        confirmLabel="Delete interview schedule"
+      />
     </div>
   )
 }

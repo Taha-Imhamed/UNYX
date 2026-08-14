@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useToast } from "@/hooks/use-toast"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 
 export interface ResourceField {
   key: string
@@ -98,6 +99,7 @@ export function ResourceManager<T extends ResourceRecord>({
   const [isSaving, setIsSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<Record<string, string>>(() => buildEmptyForm(fields))
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -154,13 +156,28 @@ export function ResourceManager<T extends ResourceRecord>({
     setEditingId(item.id)
   }
 
-  const handleDelete = async (id: string) => {
+  const requestDelete = (item: T) => {
+    setDeleteState({
+      open: true,
+      targetId: item.id,
+      targetLabel: formatFieldValue(item[titleKey]),
+      loading: false,
+      error: null,
+    })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await api.remove(id)
-      setItems((prev) => prev.filter((item) => item.id !== id))
+      await api.remove(deleteState.targetId)
+      setItems((prev) => prev.filter((item) => item.id !== deleteState.targetId))
       toast({ title: "Deleted" })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      toast({ variant: "destructive", title: "Delete failed", description: err instanceof Error ? err.message : "Unknown error" })
+      const message = err instanceof Error ? err.message : "Unknown error"
+      toast({ variant: "destructive", title: "Delete failed", description: message })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     }
   }
 
@@ -233,13 +250,22 @@ export function ResourceManager<T extends ResourceRecord>({
                 </p>
                 <div className="mt-3 flex gap-2">
                   <Button variant="outline" size="sm" onClick={() => handleEdit(item)}>Edit</Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>Delete</Button>
+                  <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>Delete</Button>
                 </div>
               </div>
             ))
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => { if (!open) setDeleteState(emptyConfirmDeleteState) }}
+        onConfirm={confirmDelete}
+        title={`Delete ${title.toLowerCase()}`}
+        description={`Removing ${deleteState.targetLabel || "this item"} cannot be undone.`}
+        confirmLabel={`Delete ${title.toLowerCase()}`}
+      />
     </div>
   )
 }

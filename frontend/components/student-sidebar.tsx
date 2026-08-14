@@ -205,6 +205,76 @@ function MobileStudentNav() {
   )
 }
 
+function MobileBottomTabBar() {
+  const pathname = usePathname()
+  const currentPathname = pathname ?? ""
+  const filteredSections = useStudentNavSections()
+  const [open, setOpen] = useState(false)
+
+  const flatItems = useMemo(() => filteredSections.flatMap((section) => section.items), [filteredSections])
+  const tabItems = flatItems.slice(0, 4)
+  const restItems = filteredSections
+    .map((section) => ({ ...section, items: section.items.filter((item) => !tabItems.includes(item)) }))
+    .filter((section) => section.items.length > 0)
+
+  return (
+    <>
+      <nav className="fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-[var(--sidebar-border)] bg-[var(--sidebar-primary)] px-1 pb-[env(safe-area-inset-bottom)] text-[var(--sidebar-primary-foreground)] shadow-[0_-6px_20px_rgba(15,23,42,0.22)] md:hidden print:hidden">
+        {tabItems.map((item) => {
+          const isActive = currentPathname === item.href || currentPathname.startsWith(item.href + "/")
+          const Icon = item.icon
+          return (
+            <Link
+              key={`tab-${item.href}`}
+              href={item.href}
+              className={cn("flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold", isActive ? "text-white" : "text-slate-300")}
+            >
+              <Icon className="h-5 w-5" />
+              <span className="max-w-full truncate px-1">{item.label}</span>
+            </Link>
+          )
+        })}
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger asChild>
+            <button type="button" className="flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold text-slate-300">
+              <Menu className="h-5 w-5" />
+              <span>More</span>
+            </button>
+          </SheetTrigger>
+          <SheetContent
+            side="bottom"
+            className="max-h-[80vh] rounded-t-[20px] border-[var(--sidebar-border)] bg-[var(--sidebar-primary)] pb-[calc(env(safe-area-inset-bottom)+16px)] text-[var(--sidebar-primary-foreground)]"
+          >
+            <SheetHeader className="px-1 pb-1 text-left">
+              <SheetTitle className="text-[13px] font-semibold uppercase tracking-[0.1em] text-white">More</SheetTitle>
+            </SheetHeader>
+            <div className="flex-1 overflow-y-auto px-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div className="space-y-4">
+                {restItems.map((section) => (
+                  <section key={section.title}>
+                    <h3 className="mb-1 px-0.5 text-[13px] font-semibold text-white">{section.title}</h3>
+                    <div className="space-y-0.5">
+                      {section.items.map((item) => {
+                        const isActive = currentPathname === item.href || currentPathname.startsWith(item.href + "/")
+                        return (
+                          <div key={`more-${item.href}`} onClick={() => setOpen(false)}>
+                            <SidebarNavLink href={item.href} label={item.label} icon={item.icon} isActive={isActive} collapsed={false} />
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </nav>
+      <div aria-hidden className="h-[calc(56px+env(safe-area-inset-bottom))] md:hidden" />
+    </>
+  )
+}
+
 function DesktopStudentSidebar() {
   const pathname = usePathname()
   const currentPathname = pathname ?? ""
@@ -338,6 +408,7 @@ export function StudentSidebar() {
     <>
       <MobileStudentNav />
       <DesktopStudentSidebar />
+      <MobileBottomTabBar />
     </>
   )
 }

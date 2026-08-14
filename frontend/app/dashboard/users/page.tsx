@@ -32,6 +32,7 @@ import { useToast } from "@/hooks/use-toast"
 import { createCustomRole, createUser, deleteCustomRole, deleteUser, fetchCustomRoles, fetchUsers, updateCustomRole, updateUser } from "@/lib/users-api"
 import { fetchAcademicStructure, type AcademicStructure } from "@/lib/enrollment-api"
 import { useFocusVisibilityRefresh } from "@/hooks/use-focus-visibility-refresh"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 
 const permissionOptions: Array<{ id: Permission; label: string; description: string; category: string }> = [
   { id: "users:manage", label: "User admin", description: "Create, edit, or remove user accounts and permission models.", category: "Identity" },
@@ -505,6 +506,8 @@ export default function UsersPage() {
   const [isSavingCustomRole, setIsSavingCustomRole] = useState(false)
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
   const [isDeletingCustomRoleId, setIsDeletingCustomRoleId] = useState<string | null>(null)
+  const [deleteRoleState, setDeleteRoleState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
+  const [deleteUserState, setDeleteUserState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
   const [isAddOpen, setIsAddOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
@@ -798,9 +801,16 @@ export default function UsersPage() {
     }
   }
 
-  const handleDeleteCustomRole = async (roleId: string) => {
+  const requestDeleteCustomRole = (role: CustomRoleTemplate) => {
+    setDeleteRoleState({ open: true, targetId: role.id, targetLabel: role.name, loading: false, error: null })
+  }
+
+  const confirmDeleteCustomRole = async () => {
+    const roleId = deleteRoleState.targetId
+    if (!roleId) return
     if (isDeletingCustomRoleId) return
     setIsDeletingCustomRoleId(roleId)
+    setDeleteRoleState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       await deleteCustomRole(roleId)
       setCustomRoles((prev) => prev.filter((entry) => entry.id !== roleId))
@@ -815,12 +825,14 @@ export default function UsersPage() {
         setEditCustomRoleDescription("")
       }
       toast({ title: "Custom role deleted" })
+      setDeleteRoleState(emptyConfirmDeleteState)
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Unable to delete custom role",
         description: error instanceof Error ? error.message : "Unknown error",
       })
+      setDeleteRoleState((prev) => ({ ...prev, loading: false, error: error instanceof Error ? error.message : "Unknown error" }))
     } finally {
       setIsDeletingCustomRoleId(null)
     }
@@ -1039,13 +1051,21 @@ export default function UsersPage() {
     }
   }
 
-  const handleDeleteUser = async (id: string) => {
+  const requestDeleteUser = (user: User) => {
+    setDeleteUserState({ open: true, targetId: user.id, targetLabel: user.username || user.email, loading: false, error: null })
+  }
+
+  const confirmDeleteUser = async () => {
+    const id = deleteUserState.targetId
+    if (!id) return
     if (isDeletingId) return
     setIsDeletingId(id)
+    setDeleteUserState((prev) => ({ ...prev, loading: true, error: null }))
     try {
       await deleteUser(id)
       setUsers((prev) => prev.filter((u) => u.id !== id))
       toast({ title: "User deleted" })
+      setDeleteUserState(emptyConfirmDeleteState)
     } catch (error) {
       console.error("Delete user failed", error)
       toast({
@@ -1053,6 +1073,7 @@ export default function UsersPage() {
         title: "Unable to delete user",
         description: error instanceof Error ? error.message : "Unknown error",
       })
+      setDeleteUserState((prev) => ({ ...prev, loading: false, error: error instanceof Error ? error.message : "Unknown error" }))
     } finally {
       setIsDeletingId(null)
     }
@@ -1410,7 +1431,7 @@ export default function UsersPage() {
                         variant="outline"
                         size="sm"
                         className={lightActionButtonClass}
-                        onClick={() => handleDeleteCustomRole(role.id)}
+                        onClick={() => requestDeleteCustomRole(role)}
                         disabled={isDeletingCustomRoleId === role.id}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -1622,7 +1643,7 @@ export default function UsersPage() {
                     </DropdownMenuItem>
                     <DropdownMenuItem
                       className="text-destructive"
-                      onClick={() => handleDeleteUser(user.id)}
+                      onClick={() => requestDeleteUser(user)}
                       disabled={user.username === "admin" || isDeletingId === user.id}
                     >
                       <Trash2 className="h-4 w-4 mr-2" />
@@ -1835,6 +1856,28 @@ export default function UsersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteAlert
+        state={deleteRoleState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRoleState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDeleteCustomRole}
+        title="Delete custom role"
+        description={`Removing ${deleteRoleState.targetLabel || "this custom role"} cannot be undone.`}
+        confirmLabel="Delete custom role"
+      />
+
+      <ConfirmDeleteAlert
+        state={deleteUserState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteUserState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDeleteUser}
+        title="Delete user"
+        description={`Removing ${deleteUserState.targetLabel || "this user"} cannot be undone.`}
+        confirmLabel="Delete user"
+      />
     </div>
   )
 }

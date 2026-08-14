@@ -21,6 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Inbox, Landmark, Pencil, PlusCircle, Trash2 } from "lucide-react"
 import { fetchEnrollments } from "@/lib/enrollment-api"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -141,6 +142,7 @@ export default function RequestsPage() {
   const [editingRequest, setEditingRequest] = useState<FinanceRequest | null>(null)
   const [editing, setEditing] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   const canReviewRequests =
     !!user && (user.role === "admin" || user.role === "super-admin" || user.role === "supervisor" || hasPermission("finance:view") || hasPermission("finance:manage"))
@@ -248,20 +250,28 @@ export default function RequestsPage() {
     }
   }
 
-  const handleDelete = async (request: FinanceRequest) => {
-    if (deletingId) return
-    setDeletingId(request.id)
+  const requestDelete = (request: FinanceRequest) => {
+    setDeleteState({ open: true, targetId: request.id, targetLabel: request.title, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeletingId(deleteState.targetId)
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await deleteFinanceRequest(request.id)
-      setRequests((prev) => prev.filter((item) => item.id !== request.id))
+      await deleteFinanceRequest(deleteState.targetId)
+      setRequests((prev) => prev.filter((item) => item.id !== deleteState.targetId))
       announceFinanceRequestsChanged()
       toast({ title: "Request deleted" })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to delete request"
       toast({
         variant: "destructive",
         title: "Delete failed",
-        description: err instanceof Error ? err.message : "Unable to delete request",
+        description: message,
       })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     } finally {
       setDeletingId(null)
     }
@@ -385,7 +395,7 @@ export default function RequestsPage() {
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Edit
                               </Button>
-                              <Button size="sm" variant="outline" className="text-destructive" disabled={deletingId === request.id} onClick={() => void handleDelete(request)}>
+                              <Button size="sm" variant="outline" className="text-destructive" disabled={deletingId === request.id} onClick={() => requestDelete(request)}>
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
                               </Button>
@@ -485,6 +495,17 @@ export default function RequestsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete request"
+        description={`Removing ${deleteState.targetLabel || "this request"} cannot be undone.`}
+        confirmLabel="Delete request"
+      />
     </div>
   )
 }

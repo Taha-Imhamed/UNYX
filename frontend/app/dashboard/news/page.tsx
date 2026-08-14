@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
 import type { NewsItem } from "@shared/types"
 import { fetchNews, publishNews, updateNews, deleteNews } from "@/lib/news-api"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 
 const MAX_NEWS_IMAGE_SIZE = 2 * 1024 * 1024
 const ACCEPTED_NEWS_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"])
@@ -57,7 +58,7 @@ export default function NewsPage() {
   const [newsImagePreview, setNewsImagePreview] = useState<string | null>(null)
   const [isPublishing, setIsPublishing] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
   const formRef = useRef<HTMLFormElement | null>(null)
   const titleRef = useRef<HTMLInputElement | null>(null)
 
@@ -246,6 +247,30 @@ export default function NewsPage() {
     }
   }
 
+  const requestDelete = (item: NewsItem) => {
+    setDeleteState({ open: true, targetId: item.id, targetLabel: item.title, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
+    try {
+      await deleteNews(deleteState.targetId)
+      setItems((prev) => prev.filter((entry) => entry.id !== deleteState.targetId))
+      toast({ title: "Announcement deleted", description: `${deleteState.targetLabel} removed.` })
+      setDeleteState(emptyConfirmDeleteState)
+    } catch (error) {
+      console.error("Delete news failed", error)
+      const message = error instanceof Error ? error.message : "Unknown error"
+      toast({
+        variant: "destructive",
+        title: "Unable to delete announcement",
+        description: message,
+      })
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
+    }
+  }
+
   return (
     <div className="flex h-full flex-col">
       <DashboardHeader
@@ -421,25 +446,8 @@ export default function NewsPage() {
                               size="icon"
                               variant="ghost"
                               className="h-8 w-8 text-destructive"
-                              onClick={async () => {
-                                if (isDeletingId) return
-                                setIsDeletingId(item.id)
-                                try {
-                                  await deleteNews(item.id)
-                                  setItems((prev) => prev.filter((entry) => entry.id !== item.id))
-                                  toast({ title: "Announcement deleted", description: `${item.title} removed.` })
-                                } catch (error) {
-                                  console.error("Delete news failed", error)
-                                  toast({
-                                    variant: "destructive",
-                                    title: "Unable to delete announcement",
-                                    description: error instanceof Error ? error.message : "Unknown error",
-                                  })
-                                } finally {
-                                  setIsDeletingId(null)
-                                }
-                              }}
-                              disabled={isDeletingId === item.id}
+                              onClick={() => requestDelete(item)}
+                              disabled={deleteState.loading && deleteState.targetId === item.id}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -467,6 +475,17 @@ export default function NewsPage() {
           </ScrollArea>
         )}
       </div>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete announcement"
+        description={`Removing ${deleteState.targetLabel || "this announcement"} cannot be undone.`}
+        confirmLabel="Delete announcement"
+      />
     </div>
   )
 }

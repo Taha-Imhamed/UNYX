@@ -10,10 +10,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { ProfessorTabNav } from "@/components/professor/ProfessorTabNav"
 import { ProfessorCourseSelect } from "@/components/professor/ProfessorCourseSelect"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { useProfessorCourseWorkspace } from "@/hooks/professor/use-professor-workspace"
 import { fetchEnrollments, type EnrollmentRecord } from "@/lib/enrollment-api"
-import type { AttendanceRecord } from "@/lib/professor-workspace-api"
+import type { AttendanceRecord, AttendanceSession } from "@/lib/professor-workspace-api"
 
 type AttendanceDraftMap = Record<string, { status: AttendanceRecord["status"]; note: string }>
 
@@ -27,6 +28,7 @@ export default function ProfessorAttendancePage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({ title: "", sessionDate: "", notes: "" })
   const [drafts, setDrafts] = useState<AttendanceDraftMap>({})
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   useEffect(() => {
     if (!selectedCourseId) {
@@ -91,12 +93,22 @@ export default function ProfessorAttendancePage() {
     }
   }
 
-  const handleDelete = async (itemId: string) => {
+  const requestDelete = (item: AttendanceSession) => {
+    const label = item.title || new Date(item.sessionDate).toLocaleDateString()
+    setDeleteState({ open: true, targetId: item.id, targetLabel: label, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await removeItem("attendanceSessions", itemId)
+      await removeItem("attendanceSessions", deleteState.targetId)
       toast({ title: "Deleted", description: "Saved change to dashboard." })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete item")
+      const message = err instanceof Error ? err.message : "Unable to delete item"
+      setError(message)
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     }
   }
 
@@ -208,7 +220,7 @@ export default function ProfessorAttendancePage() {
                   >
                     Edit
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
+                  <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>
                     Delete
                   </Button>
                 </div>
@@ -217,6 +229,17 @@ export default function ProfessorAttendancePage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete attendance session"
+        description={`Removing ${deleteState.targetLabel || "this attendance session"} cannot be undone.`}
+        confirmLabel="Delete attendance session"
+      />
     </div>
   )
 }

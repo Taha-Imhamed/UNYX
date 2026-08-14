@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { ProfessorTabNav } from "@/components/professor/ProfessorTabNav"
 import { ProfessorCourseSelect } from "@/components/professor/ProfessorCourseSelect"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { useProfessorCourseWorkspace } from "@/hooks/professor/use-professor-workspace"
 import type { OfficeHour } from "@/lib/professor-workspace-api"
@@ -35,6 +36,7 @@ export default function ProfessorOfficeHoursPage() {
     notes: "",
     status: "scheduled" as OfficeHour["status"],
   })
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
 
   const resetForm = () => {
     setForm({ title: "", startsAt: "", endsAt: "", location: "", meetingLink: "", notes: "", status: "scheduled" })
@@ -59,12 +61,22 @@ export default function ProfessorOfficeHoursPage() {
     }
   }
 
-  const handleDelete = async (itemId: string) => {
+  const requestDelete = (item: OfficeHour) => {
+    const label = item.title || formatDate(item.startsAt)
+    setDeleteState({ open: true, targetId: item.id, targetLabel: label, loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await removeItem("officeHours", itemId)
+      await removeItem("officeHours", deleteState.targetId)
       toast({ title: "Deleted", description: "Saved change to dashboard." })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete item")
+      const message = err instanceof Error ? err.message : "Unable to delete item"
+      setError(message)
+      setDeleteState((prev) => ({ ...prev, loading: false, error: message }))
     }
   }
 
@@ -152,7 +164,7 @@ export default function ProfessorOfficeHoursPage() {
                   >
                     Edit
                   </Button>
-                  <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
+                  <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>
                     Delete
                   </Button>
                 </div>
@@ -161,6 +173,17 @@ export default function ProfessorOfficeHoursPage() {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete office hours slot"
+        description={`Removing ${deleteState.targetLabel || "this office hours slot"} cannot be undone.`}
+        confirmLabel="Delete office hours slot"
+      />
     </div>
   )
 }

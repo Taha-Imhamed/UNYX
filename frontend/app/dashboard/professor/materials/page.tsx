@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { ProfessorTabNav } from "@/components/professor/ProfessorTabNav"
 import { ProfessorCourseSelect } from "@/components/professor/ProfessorCourseSelect"
+import { ConfirmDeleteAlert, emptyConfirmDeleteState, type ConfirmDeleteState } from "@/components/enrollment/ConfirmDeleteAlert"
 import { useToast } from "@/hooks/use-toast"
 import { useProfessorCourseWorkspace } from "@/hooks/professor/use-professor-workspace"
 import type { ProfessorMaterial } from "@/lib/professor-workspace-api"
@@ -52,6 +53,7 @@ export default function ProfessorMaterialsPage() {
   const [materialFile, setMaterialFile] = useState<File | null>(null)
   const [materialInputKey, setMaterialInputKey] = useState(0)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [deleteState, setDeleteState] = useState<ConfirmDeleteState>(emptyConfirmDeleteState)
   const [form, setForm] = useState({ title: "", category: "syllabus" as ProfessorMaterial["category"], description: "" })
 
   const resetForm = () => {
@@ -102,12 +104,19 @@ export default function ProfessorMaterialsPage() {
     }
   }
 
-  const handleDelete = async (itemId: string) => {
+  const requestDelete = (item: ProfessorMaterial) => {
+    setDeleteState({ open: true, targetId: item.id, targetLabel: item.title || item.fileName || "", loading: false, error: null })
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteState.targetId) return
+    setDeleteState((prev) => ({ ...prev, loading: true, error: null }))
     try {
-      await removeItem("materials", itemId)
+      await removeItem("materials", deleteState.targetId)
       toast({ title: "Deleted", description: "Saved change to dashboard." })
+      setDeleteState(emptyConfirmDeleteState)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete item")
+      setDeleteState((prev) => ({ ...prev, loading: false, error: err instanceof Error ? err.message : "Unable to delete item" }))
     }
   }
 
@@ -206,7 +215,7 @@ export default function ProfessorMaterialsPage() {
                     >
                       Edit
                     </Button>
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(item.id)}>
+                    <Button variant="destructive" size="sm" onClick={() => requestDelete(item)}>
                       Delete
                     </Button>
                   </div>
@@ -216,6 +225,17 @@ export default function ProfessorMaterialsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDeleteAlert
+        state={deleteState}
+        onOpenChange={(open) => {
+          if (!open) setDeleteState(emptyConfirmDeleteState)
+        }}
+        onConfirm={confirmDelete}
+        title="Delete material"
+        description={`Removing ${deleteState.targetLabel || "this material"} cannot be undone.`}
+        confirmLabel="Delete material"
+      />
     </div>
   )
 }
